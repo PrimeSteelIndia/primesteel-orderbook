@@ -1,5 +1,9 @@
 # Prime Steel — Order Book
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/PrimeSteelIndia/primesteel-orderbook)
+
+24x7 Cloud Order Portal, Worker Weighing Station, and Office Admin Dashboard.
+
 One small server on the office PC holds every order. Phones take orders.
 The office PC and the Mac both open that same server in a browser, so they
 always see the same list — nothing to sync.
