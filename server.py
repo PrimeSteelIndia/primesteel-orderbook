@@ -1844,7 +1844,11 @@ class Handler(BaseHTTPRequestHandler):
             ctype = "image/webp"
         elif target.suffix == ".woff2":
             ctype = "font/woff2"
-        if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
+        elif target.suffix == ".xml":
+            ctype = "application/xml"
+        elif target.suffix == ".txt":
+            ctype = "text/plain"
+        if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "application/xml", "image/svg+xml"):
             ctype += "; charset=utf-8"
         data = target.read_bytes()
         self._bytes(data, ctype)

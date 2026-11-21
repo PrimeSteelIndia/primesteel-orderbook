@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Allow: /order
+Allow: /landing
+Allow: /assets/
+Disallow: /admin
+Disallow: /worker
+Disallow: /api/
+
+Sitemap: https://primesteel.cc.cd/sitemap.xml
