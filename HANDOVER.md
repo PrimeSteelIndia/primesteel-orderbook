@@ -169,3 +169,14 @@ The SQLite schema automatically checks and applies migrations on startup:
    python tools/smoke_test.py
    ```
    *(All 4 test suites pass with 100% success).*
+
+---
+
+## 7. STRICT PERMANENT DATA PROTECTION POLICY (CRITICAL)
+
+> [!CAUTION]
+> **NEVER DELETE OR OVERWRITE LIVE ORDERS OR THE DATABASE.**
+> 1. `data/prime.db` is strictly untracked in Git and ignored by `.gitignore`. Do NOT commit or stage `data/prime.db`.
+> 2. No script, test, or code change may EVER drop tables, delete customer orders, or reset order sequences.
+> 3. All real orders (`PS-2026-0021`, `PS-2026-0032`, `PS-2026-0033`, `PS-2026-0040`, `PS-2026-0045`, `PS-2026-0046`, `PS-2026-0066`, etc.) and all export workbooks in `exports/` are live business assets.
+> 4. Any test must run against an in-memory database (`:memory:`) or an isolated temporary database, NEVER `data/prime.db`.
