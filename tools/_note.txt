@@ -1,0 +1,2 @@
+// Replaces the block from "// Derive pcs" through "// Derive feet" + weight derivation
+// Inside calcItemEntry. Rate is rupees per KG. Amount = weight * rate.

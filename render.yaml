@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: primesteel-orderbook
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: ADMIN_PIN
+        value: Prime2026
+      - key: WORKER_PIN
+        value: "1234"

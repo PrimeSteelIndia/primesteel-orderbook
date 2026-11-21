@@ -1,0 +1,11 @@
+{
+  "business_name": "Prime Steel",
+  "tagline": "Order book",
+  "shared_folder": "",
+  "admin_pin": "Prime2026",
+  "worker_pin": "1234",
+  "enable_tunnel": true,
+  "tunnel_token": "eyJhIjoiZDRiYzkwYjY3NWEyZjNkMmE0NjA3NDFiZDIwMjg2YjIiLCJ0IjoiM2VkZGZkMzAtNmQ0ZS00MDdmLTgwYzUtY2MwMjgwYzdiZDcwIiwicyI6Ims0Z01Qak9UZTBueE15V1E3MHRvdFlsL2RkOWc5ZWRlWDA1S2pFQjFzc1U9In0=",
+  "excel_rates_path": "C:\\Users\\Prime Steel\\Desktop\\COMPANY STUDY_backup.xlsm",
+  "auto_sync_excel": true
+}

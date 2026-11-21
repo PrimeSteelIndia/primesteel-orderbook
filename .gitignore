@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+bin/
+exports/
+.vscode/
+.idea/
+*.log

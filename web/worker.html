@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1b3554">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <title>Worker Scale Station — Prime Steel</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/app.css">
+  <style>
+    .worker-lock-btn {
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: 8px;
+    }
+    .worker-lock-btn:hover { background: rgba(255,255,255,0.22); }
+  </style>
+</head>
+<body class="worker">
+  <!-- Worker PIN Unlock Gate -->
+  <div class="login-gate hidden" id="workerLoginGate">
+    <div class="login-box">
+      <img src="/logo.png" alt="Prime Steel" style="height:46px;width:auto;max-width:170px;margin:0 auto 14px;display:block;object-fit:contain">
+      <h2>Worker Station Lock</h2>
+      <p>Enter the Worker PIN or Admin Password to access factory weighing and orders.</p>
+      <input class="input pin-input" id="workerPinInput" type="password" autocomplete="current-password" placeholder="Worker PIN (Default: 1234)">
+      <button class="btn btn-primary btn-lg btn-block" id="workerPinBtn">Unlock Station</button>
+      <p class="tiny muted" style="margin-top:14px">Factory internal use only. Public customers should order from <a href="/order" style="color:#e07a2a;">/order</a>.</p>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <a href="/" title="Back to Home Website" style="text-decoration:none;display:flex;align-items:center;gap:8px;color:inherit;">
+      <img src="/logo.png" alt="Prime Steel" style="height:32px;width:auto;max-width:110px;object-fit:contain;display:block;">
+    </a>
+    <div style="flex:1;min-width:0">
+      <div class="brand-name" id="businessName">Prime Steel</div>
+      <div class="brand-sub" id="brandSub">Worker Station</div>
+    </div>
+    <span class="conn" id="conn"><span class="dot"></span>Connecting</span>
+    <button class="worker-lock-btn" id="lockWorkerBtn" title="Lock Worker Station">🔒 Lock</button>
+  </header>
+
+  <main id="view"></main>
+  <div id="foot"></div>
+
+  <nav class="tabbar" aria-label="Main">
+    <button type="button" data-tab="new" aria-selected="true">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      New order
+    </button>
+    <button type="button" data-tab="orders" aria-selected="false">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3z"/><path d="M9 8h6M9 12h6"/></svg>
+      Orders
+      <span class="count hidden" id="pendingBadge">0</span>
+    </button>
+  </nav>
+
+  <div id="toastRoot"></div>
+
+  <script src="/ui.js"></script>
+  <script src="/share.js"></script>
+  <script src="/share_pdf.js"></script>
+  <script src="/share_ui.js"></script>
+  <script src="/worker.js"></script>
+  <script>
+    document.querySelectorAll('.tabbar button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        location.hash = b.dataset.tab === 'orders' ? '#/orders' : '#/';
+      });
+    });
+  </script>
+</body>
+</html>
