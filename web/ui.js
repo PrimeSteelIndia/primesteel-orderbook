@@ -151,7 +151,13 @@ async function api(path, options = {}) {
   try {
     res = await fetch(path, { ...options, headers });
   } catch (err) {
-    throw new ApiFailure('Cannot reach the office computer. Check Wi-Fi.', 0);
+    // Retry once after 800ms in case the server was waking up or network blipped
+    try {
+      await new Promise(r => setTimeout(r, 800));
+      res = await fetch(path, { ...options, headers });
+    } catch {
+      throw new ApiFailure('Cannot reach the server. Please check connection and try again.', 0);
+    }
   }
   let data = null;
   const text = await res.text();

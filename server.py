@@ -2331,6 +2331,10 @@ def main() -> None:
     # In cloud environments like Render, file watcher and local tunnel are not needed
     is_cloud = bool(os.environ.get("RENDER") or os.environ.get("DYNO") or os.environ.get("K_SERVICE"))
 
+    # Start 24x7 keep-alive heartbeat to prevent Render free instance from sleeping
+    import keepalive
+    keepalive.start_keepalive()
+
     if not is_cloud and settings.get("auto_sync_excel", True):
         excel_sync.start_excel_watcher(
             get_path_fn=lambda: excel_sync.get_excel_path(load_settings()),
@@ -2351,6 +2355,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\n  Stopped.")
     finally:
+        keepalive.stop_keepalive()
         tunnel.stop_tunnel()
         httpd.server_close()
 
