@@ -280,6 +280,72 @@ def _migrate_db(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _seed_db_if_empty(conn: sqlite3.Connection) -> None:
+    """Only populates catalog and historical orders if the database is completely empty (e.g. fresh cloud container).
+    NEVER modifies, deletes, or overwrites existing data."""
+    try:
+        items_count = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+        if items_count == 0:
+            seed_items_file = DATA_DIR / "seed_items.json"
+            if seed_items_file.exists():
+                items = json.loads(seed_items_file.read_text(encoding="utf-8"))
+                for it in items:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO items (id, name, norm, category, rate, weight_per_pc,
+                               main_unit, alt_unit, alt_factor, alt_unit2, alt_unit2_factor, length_per_pc,
+                               order_unit, active, sort, updated_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            it.get("id"), it.get("name"), it.get("norm"), it.get("category", ""),
+                            it.get("rate", 0), it.get("weight_per_pc", 0),
+                            it.get("main_unit", "kg"), it.get("alt_unit", "pcs"), it.get("alt_factor", 0),
+                            it.get("alt_unit2", ""), it.get("alt_unit2_factor", 0), it.get("length_per_pc", 0),
+                            it.get("order_unit", ""), it.get("active", 1), it.get("sort", 0), it.get("updated_at", now_ms())
+                        )
+                    )
+        
+        orders_count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        if orders_count == 0:
+            seed_orders_file = DATA_DIR / "seed_orders.json"
+            if seed_orders_file.exists():
+                sdata = json.loads(seed_orders_file.read_text(encoding="utf-8"))
+                for o in sdata.get("orders", []):
+                    conn.execute(
+                        """INSERT OR IGNORE INTO orders (id, order_no, seq, year, client_id, created_at,
+                               customer_name, customer_phone, worker, note, status,
+                               est_weight, est_amount, actual_weight, actual_amount,
+                               weighed_at, exported_at, export_error)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            o.get("id"), o.get("order_no"), o.get("seq"), o.get("year"), o.get("client_id"), o.get("created_at"),
+                            o.get("customer_name"), o.get("customer_phone"), o.get("worker"), o.get("note"), o.get("status"),
+                            o.get("est_weight"), o.get("est_amount"), o.get("actual_weight"), o.get("actual_amount"),
+                            o.get("weighed_at"), o.get("exported_at"), o.get("export_error")
+                        )
+                    )
+                for l in sdata.get("lines", []):
+                    conn.execute(
+                        """INSERT OR IGNORE INTO order_lines (id, order_id, line_no, item_id, name, category,
+                               pcs, weight_per_pc, rate, actual_weight, narration,
+                               entry_unit, entry_qty, unit, qty)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            l.get("id"), l.get("order_id"), l.get("line_no"), l.get("item_id"), l.get("name"), l.get("category"),
+                            l.get("pcs"), l.get("weight_per_pc"), l.get("rate"), l.get("actual_weight"), l.get("narration"),
+                            l.get("entry_unit"), l.get("entry_qty"), l.get("unit"), l.get("qty")
+                        )
+                    )
+                for c in sdata.get("counters", []):
+                    c_name = c[0] if isinstance(c, (list, tuple)) else c.get("name")
+                    c_val = c[1] if isinstance(c, (list, tuple)) else c.get("value")
+                    conn.execute(
+                        "INSERT OR IGNORE INTO counters (name, value) VALUES (?, ?)",
+                        (c_name, c_val)
+                    )
+    except Exception as exc:
+        log_event("seed.error", str(exc))
+
+
 def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -287,6 +353,7 @@ def init_db() -> None:
     try:
         conn.executescript(SCHEMA)
         _migrate_db(conn)
+        _seed_db_if_empty(conn)
         conn.commit()
     finally:
         conn.close()
@@ -2247,6 +2314,54 @@ class Handler(BaseHTTPRequestHandler):
             if not res.get("ok"):
                 raise ApiError(res.get("error") or "Sync failed", 400)
             return self._json(res)
+
+        if path == "/api/orders/sync":
+            body = self._body()
+            token = (body.get("sync_token") or body.get("token") or "").strip()
+            s = load_settings()
+            admin_pin = (s.get("admin_pin") or "Prime2026").strip()
+            if not (token and (token == admin_pin or token == s.get("sync_token"))) and not self._is_admin():
+                raise ApiError("Unauthorized sync token.", 401)
+            orders = body.get("orders") or []
+            lines = body.get("lines") or []
+            conn = db()
+            inserted_orders = 0
+            inserted_lines = 0
+            try:
+                for o in orders:
+                    res = conn.execute(
+                        """INSERT OR IGNORE INTO orders (id, order_no, seq, year, client_id, created_at,
+                               customer_name, customer_phone, worker, note, status,
+                               est_weight, est_amount, actual_weight, actual_amount,
+                               weighed_at, exported_at, export_error)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            o.get("id"), o.get("order_no"), o.get("seq"), o.get("year"), o.get("client_id"), o.get("created_at"),
+                            o.get("customer_name"), o.get("customer_phone"), o.get("worker"), o.get("note"), o.get("status"),
+                            o.get("est_weight"), o.get("est_amount"), o.get("actual_weight"), o.get("actual_amount"),
+                            o.get("weighed_at"), o.get("exported_at"), o.get("export_error")
+                        )
+                    )
+                    if res.rowcount > 0:
+                        inserted_orders += 1
+                for l in lines:
+                    res = conn.execute(
+                        """INSERT OR IGNORE INTO order_lines (id, order_id, line_no, item_id, name, category,
+                               pcs, weight_per_pc, rate, actual_weight, narration,
+                               entry_unit, entry_qty, unit, qty)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            l.get("id"), l.get("order_id"), l.get("line_no"), l.get("item_id"), l.get("name"), l.get("category"),
+                            l.get("pcs"), l.get("weight_per_pc"), l.get("rate"), l.get("actual_weight"), l.get("narration"),
+                            l.get("entry_unit"), l.get("entry_qty"), l.get("unit"), l.get("qty")
+                        )
+                    )
+                    if res.rowcount > 0:
+                        inserted_lines += 1
+                conn.commit()
+                return self._json({"ok": True, "orders_added": inserted_orders, "lines_added": inserted_lines})
+            finally:
+                conn.close()
 
         if path == "/api/tunnel/restart":
             self._require_admin()

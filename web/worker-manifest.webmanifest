@@ -1,9 +1,10 @@
 {
+  "id": "/worker",
   "name": "Prime Steel — Worker Station",
   "short_name": "PS Worker",
   "description": "Worker Scale Station for recording piece counts and weighing dispatch orders.",
   "start_url": "/worker",
-  "scope": "/",
+  "scope": "/worker",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#1b3554",

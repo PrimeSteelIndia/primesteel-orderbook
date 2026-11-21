@@ -1,9 +1,10 @@
 {
+  "id": "/order",
   "name": "Prime Steel — Order Portal",
   "short_name": "PS Orders",
   "description": "Prime Steel Online Material Procurement and Order Portal.",
   "start_url": "/order",
-  "scope": "/",
+  "scope": "/order",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f4f3ee",
