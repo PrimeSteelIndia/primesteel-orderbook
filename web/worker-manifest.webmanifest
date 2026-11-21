@@ -1,0 +1,16 @@
+{
+  "name": "Prime Steel — Worker Station",
+  "short_name": "PS Worker",
+  "description": "Worker Scale Station for recording piece counts and weighing dispatch orders.",
+  "start_url": "/worker",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1b3554",
+  "theme_color": "#1b3554",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

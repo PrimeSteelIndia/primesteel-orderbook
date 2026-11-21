@@ -1,13 +1,13 @@
 {
-  "name": "Prime Steel Order Book",
+  "name": "Prime Steel — Order Portal",
   "short_name": "PS Orders",
-  "description": "Take steel orders by the piece, weigh them, and send them to the office.",
+  "description": "Prime Steel Online Material Procurement and Order Portal.",
   "start_url": "/order",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f4f6f9",
-  "theme_color": "#1b3554",
+  "background_color": "#f4f3ee",
+  "theme_color": "#151819",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
