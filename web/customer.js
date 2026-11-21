@@ -21,10 +21,42 @@ document.addEventListener('DOMContentLoaded', initCustomer);
 
 async function initCustomer() {
   wireNavigation();
+  wireMobileSteps();
   initStoredPhone();
   wireFloatingCart();
   wireSearchShortcuts();
   await loadItems();
+}
+
+/* --------------------------------------------------------------------------
+   MOBILE STEP NAVIGATION (Catalog vs Order Panel toggle on small screens)
+   -------------------------------------------------------------------------- */
+function wireMobileSteps() {
+  const btnCat = document.getElementById('btnStepCatalog');
+  const btnChk = document.getElementById('btnStepCheckout');
+  const btnProceed = document.getElementById('btnProceedDossier');
+  const btnBack = document.getElementById('btnBackToCatalog');
+
+  window.setMobileStep = function (step) {
+    const isChk = step === 'checkout';
+    document.body.classList.toggle('mobile-mode-checkout', isChk);
+    document.body.classList.toggle('mobile-mode-catalog', !isChk);
+    if (btnCat) btnCat.classList.toggle('active', !isChk);
+    if (btnChk) btnChk.classList.toggle('active', isChk);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Default to catalog view on mobile
+  document.body.classList.add('mobile-mode-catalog');
+
+  if (btnCat) btnCat.addEventListener('click', () => window.setMobileStep('catalog'));
+  if (btnChk) btnChk.addEventListener('click', () => window.setMobileStep('checkout'));
+  if (btnProceed) btnProceed.addEventListener('click', () => window.setMobileStep('checkout'));
+  if (btnBack) btnBack.addEventListener('click', () => window.setMobileStep('catalog'));
+
+  if (window.location.hash === '#checkout') {
+    window.setMobileStep('checkout');
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -177,9 +209,13 @@ function wireFloatingCart() {
   const floatBar = document.getElementById('floatingCartBar');
   if (floatBar) {
     floatBar.addEventListener('click', () => {
-      const card = document.getElementById('cartCard');
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (window.innerWidth < 960 && window.setMobileStep) {
+        window.setMobileStep('checkout');
+      } else {
+        const card = document.getElementById('cartCard');
+        if (card) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       }
     });
   }
@@ -401,7 +437,10 @@ function formatWeightDisplay(kgVal) {
 function renderCart() {
   const list = document.getElementById('cartList');
   const countBadge = document.getElementById('cartBadgeCount');
+  const stepBadge = document.getElementById('stepCartBadge');
   const floatBar = document.getElementById('floatingCartBar');
+
+  if (stepBadge) stepBadge.textContent = String(CS.cart.length);
 
   if (!CS.cart.length) {
     if (list) {

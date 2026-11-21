@@ -65,6 +65,19 @@
     <!-- VIEW 1: PLACE ORDER (2-COLUMN RESPONSIVE WORKBENCH) -->
     <div id="tabNewOrder">
 
+      <!-- MOBILE STEP SWITCHER (Visible strictly on mobile screens < 960px) -->
+      <nav class="mobile-order-steps" aria-label="Mobile Order Progress">
+        <button type="button" class="mobile-step-btn active" id="btnStepCatalog">
+          <span class="step-num">1</span>
+          <span>Select Steel Material</span>
+        </button>
+        <button type="button" class="mobile-step-btn" id="btnStepCheckout">
+          <span class="step-num">2</span>
+          <span>Order Details &amp; Bill</span>
+          <span class="step-badge" id="stepCartBadge">0</span>
+        </button>
+      </nav>
+
       <!-- ORDER SUCCESS DOCKET (HIDDEN UNTIL ORDER CONFIRMED) -->
       <div class="success-docket hidden" id="orderSuccessBox">
         <div class="success-docket__icon">
@@ -117,10 +130,23 @@
               <span class="mono">Loading Prime Steel catalog...</span>
             </div>
           </div>
+
+          <div class="mobile-only-btn-wrap" style="margin-top:16px;">
+            <button type="button" class="btn-submit-order" id="btnProceedDossier">
+              <span>Review Order &amp; Enter Details</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </div>
         </section>
 
         <!-- RIGHT COLUMN: STICKY PROCUREMENT DOSSIER & ORDER SUMMARY -->
-        <aside class="sticky-dossier" aria-label="Procurement Dossier">
+        <aside class="sticky-dossier" id="orderDossierAside" aria-label="Procurement Dossier">
+
+          <div class="mobile-only-btn-wrap" style="margin-bottom:14px;">
+            <button type="button" class="mobile-back-catalog-btn" id="btnBackToCatalog">
+              <span>← Back to Steel Catalog to Add More Items</span>
+            </button>
+          </div>
 
           <!-- Card 1: Consignee & Dispatch Information -->
           <div class="panel-card" id="custInfoCard">
