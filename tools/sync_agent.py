@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 import excel_sync
 
 EXCEL_PATH = Path(r"C:\Users\Prime Steel\Desktop\COMPANY STUDY_backup.xlsm")
-CLOUD_URL = os.environ.get("PRIMESTEEL_URL", "https://primesteel.cc.cd")
+CLOUD_URL = os.environ.get("PRIMESTEEL_URL", "https://primesteel-orderbook.onrender.com")
 SYNC_TOKEN = os.environ.get("PRIMESTEEL_SYNC_TOKEN", "Prime2026")
 
 
