@@ -121,8 +121,21 @@ def order_workbook(order: dict, settings: dict) -> bytes:
 
     first = header_row + 1
     r = first
+    single_line = len(order.get("lines_detail", [])) == 1
+    order_act = float(order.get("actual_weight") or 0.0)
+
+    def _line_weight(l: dict) -> float:
+        act_w = l.get("actual_weight")
+        if act_w is not None and float(act_w) > 0:
+            return float(act_w)
+        if single_line and order_act > 0:
+            return order_act
+        if act_w is not None:
+            return float(act_w)
+        return float(l.get("est_weight") or 0.0)
+
     for idx, line in enumerate(order["lines_detail"], start=1):
-        w = line["actual_weight"] if weighed and line["actual_weight"] is not None else line["est_weight"]
+        w = _line_weight(line)
         amount = round(w * line["rate"], 2)
         name_disp = line["name"]
         if line.get("narration"):
@@ -162,14 +175,8 @@ def order_workbook(order: dict, settings: dict) -> bytes:
     ws.cell(row=total_row, column=1).fill = PatternFill("solid", fgColor=NAVY)
     ws.cell(row=total_row, column=1).alignment = Alignment(horizontal="right")
     pcs_total = sum(l["pcs"] for l in order["lines_detail"])
-    w_total = sum(
-        (l["actual_weight"] if weighed and l["actual_weight"] is not None else l["est_weight"])
-        for l in order["lines_detail"]
-    )
-    a_total = sum(
-        (l["actual_weight"] if weighed and l["actual_weight"] is not None else l["est_weight"]) * l["rate"]
-        for l in order["lines_detail"]
-    )
+    w_total = sum(_line_weight(l) for l in order["lines_detail"])
+    a_total = sum(_line_weight(l) * l["rate"] for l in order["lines_detail"])
     totals = [None, None, pcs_total, round(w_total, 3), None, None, round(a_total, 2)]
     for col, val in enumerate(totals, start=1):
         c = ws.cell(row=total_row, column=col, value=val)
@@ -284,8 +291,18 @@ def master_workbook(orders: list[dict], settings: dict) -> bytes:
     r = 2
     for o in orders:
         dt = datetime.fromtimestamp(o["created_at"] / 1000)
+        single_line = len(o.get("lines_detail", [])) == 1
+        order_act = float(o.get("actual_weight") or 0.0)
         for line in o["lines_detail"]:
-            act = line["actual_weight"] if line["actual_weight"] is not None else line["est_weight"]
+            act_w = line.get("actual_weight")
+            if act_w is not None and float(act_w) > 0:
+                act = float(act_w)
+            elif single_line and order_act > 0:
+                act = order_act
+            elif act_w is not None:
+                act = float(act_w)
+            else:
+                act = float(line.get("est_weight") or 0.0)
             name_disp = line["name"]
             if line.get("narration"):
                 name_disp = f"{name_disp} ({line['narration']})"
@@ -360,18 +377,29 @@ def order_csv(order: dict, settings: dict) -> str:
         w.writerow(["WEIGHED", _stamp(order["weighed_at"])])
     w.writerow([])
     w.writerow(["#", "DETAILS", "PCS", "QNTY (kg)", "W/PCS", "RATE", "AMOUNT"])
+    single_line = len(order.get("lines_detail", [])) == 1
+    order_act = float(order.get("actual_weight") or 0.0)
+
+    def _line_weight(l: dict) -> float:
+        act_w = l.get("actual_weight")
+        if act_w is not None and float(act_w) > 0:
+            return float(act_w)
+        if single_line and order_act > 0:
+            return order_act
+        if act_w is not None:
+            return float(act_w)
+        return float(l.get("est_weight") or 0.0)
+
     for idx, line in enumerate(order["lines_detail"], start=1):
-        wt = line["actual_weight"] if weighed and line["actual_weight"] is not None else line["est_weight"]
+        wt = _line_weight(line)
         name_disp = line["name"]
         if line.get("narration"):
             name_disp = f"{name_disp} ({line['narration']})"
         w.writerow([idx, name_disp, line["pcs"], f"{wt:.3f}",
                     f"{(wt / line['pcs'] if line['pcs'] else 0):.3f}",
                     f"{line['rate']:.2f}", f"{wt * line['rate']:.2f}"])
-    tw = sum((l["actual_weight"] if weighed and l["actual_weight"] is not None else l["est_weight"])
-             for l in order["lines_detail"])
-    ta = sum((l["actual_weight"] if weighed and l["actual_weight"] is not None else l["est_weight"]) * l["rate"]
-             for l in order["lines_detail"])
+    tw = sum(_line_weight(l) for l in order["lines_detail"])
+    ta = sum(_line_weight(l) * l["rate"] for l in order["lines_detail"])
     w.writerow(["", "TOTAL", sum(l["pcs"] for l in order["lines_detail"]), f"{tw:.3f}", "", "", f"{ta:.2f}"])
     return out.getvalue()
 

@@ -388,7 +388,11 @@ async function openOrderDrawer(orderId) {
 
       <div class="section-title" style="margin:18px 0 8px">Items</div>
       ${order.lines_detail.map(l => {
-        const w = weighed && l.actual_weight !== null ? l.actual_weight : l.est_weight;
+        const hasLineAct = l.actual_weight !== null && l.actual_weight !== undefined && l.actual_weight !== '' && !isNaN(Number(l.actual_weight)) && Number(l.actual_weight) > 0;
+        const singleLine = (order.lines_detail || []).length === 1;
+        const orderAct = Number(order.actual_weight) || 0;
+        const isWeighedLine = hasLineAct || (singleLine && orderAct > 0) || (weighed && l.actual_weight !== null);
+        const w = hasLineAct ? Number(l.actual_weight) : ((singleLine && orderAct > 0) ? orderAct : (weighed && l.actual_weight !== null ? Number(l.actual_weight) : (l.est_weight != null ? Number(l.est_weight) : 0)));
         const entryInfo = l.entry_unit && l.entry_unit !== 'pcs'
           ? `${l.entry_qty} ${l.entry_unit} (${l.pcs} pcs)`
           : `${l.pcs} pcs`;
@@ -397,11 +401,11 @@ async function openOrderDrawer(orderId) {
             <span class="dline-name">${esc(l.name)}</span>
             <span class="dline-amt">${money(w * l.rate)}</span>
           </div>
-          <div class="dline-sub">${entryInfo} · ${kg(w, 2)} ${weighed ? 'actual' : 'estimated'} · ${money(l.rate)}/kg
-            ${weighed && Math.abs(l.actual_weight - l.est_weight) >= 0.05 ? ` · est was ${kg(l.est_weight, 2)}` : ''}</div>
+          <div class="dline-sub">${entryInfo} · ${kg(w, 2)} ${isWeighedLine ? 'actual' : 'estimated'} · ${money(l.rate)}/kg
+            ${isWeighedLine && l.est_weight && Math.abs(w - l.est_weight) >= 0.05 ? ` · est was ${kg(l.est_weight, 2)}` : ''}</div>
           ${l.narration ? `<div style="font-size:12px;color:#0c6b47;font-style:italic;margin-top:4px;display:flex;align-items:center;gap:4px">
             ${icon('edit', 'i i-sm')} Note: “${esc(l.narration)}”</div>` : ''}
-          ${weighed ? `<div style="margin-top:6px;display:flex;justify-content:flex-end">
+          ${isWeighedLine ? `<div style="margin-top:6px;display:flex;justify-content:flex-end">
             <button class="btn btn-xs btn-soft" data-fix-line="${l.id}" style="min-height:28px;padding:0 8px;font-size:12px">
               ${icon('edit', 'i i-sm')} Change weight
             </button>
@@ -446,7 +450,7 @@ async function openOrderDrawer(orderId) {
 
   drawer.querySelectorAll('[data-fix-line]').forEach(btn => {
     btn.addEventListener('click', () => {
-      openFixWeightAdmin(order, Number(btn.dataset.fixLine), close);
+      openFixWeightAdmin(order, btn.dataset.fixLine, close);
     });
   });
 
@@ -463,11 +467,23 @@ async function openOrderDrawer(orderId) {
   });
 
   drawer.querySelector('[data-act="copy"]').addEventListener('click', async () => {
+    const singleLine = (order.lines_detail || []).length === 1;
+    const orderAct = Number(order.actual_weight) || 0;
     const rows = (order.lines_detail || []).map(l => {
-      const w = (weighed && l.actual_weight !== null && l.actual_weight !== undefined)
-        ? l.actual_weight
-        : (l.est_weight != null ? l.est_weight : 0);
-      const wtStr = typeof w === 'number' ? (Number.isFinite(w) ? w.toFixed(3) : '') : (w || '');
+      const hasLineAct = l.actual_weight !== null && l.actual_weight !== undefined && l.actual_weight !== '' && !isNaN(Number(l.actual_weight)) && Number(l.actual_weight) > 0;
+      let w;
+      if (hasLineAct) {
+        w = Number(l.actual_weight);
+      } else if (singleLine && orderAct > 0) {
+        w = orderAct;
+      } else if (weighed && l.actual_weight !== null && l.actual_weight !== undefined && !isNaN(Number(l.actual_weight))) {
+        w = Number(l.actual_weight);
+      } else {
+        w = Number(l.est_weight) || 0;
+      }
+      const wtStr = typeof w === 'number' && Number.isFinite(w)
+        ? (Number.isInteger(w) ? String(w) : Number(w.toFixed(3)).toString())
+        : (w || '');
       return [l.name || '', l.pcs != null ? l.pcs : '', wtStr].join('\t');
     });
     try {
@@ -507,13 +523,13 @@ async function openOrderDrawer(orderId) {
 }
 
 function openFixWeightAdmin(order, lineId, closeDrawer) {
-  const line = (order.lines_detail || []).find(l => l.id === lineId);
+  const line = (order.lines_detail || []).find(l => String(l.id) === String(lineId));
   if (!line) return;
-  const currentWeight = line.actual_weight !== null ? line.actual_weight : (line.est_weight || 0);
+  const currentWeight = (line.actual_weight !== null && line.actual_weight !== undefined && line.actual_weight !== '') ? Number(line.actual_weight) : (line.est_weight || 0);
 
   const { sheet, close } = openSheet({
     title: `Change weight: ${line.name}`,
-    sub: `${line.pcs} pcs · Current: ${kg(line.actual_weight, 2)} · ${money(line.rate)}/kg`,
+    sub: `${line.pcs} pcs · Current: ${kg(currentWeight, 2)} · ${money(line.rate)}/kg`,
     body: `
       <div class="field" style="margin-top:8px;margin-bottom:12px">
         <label for="corrWeightAdmin">Correct scale weight (kg)</label>

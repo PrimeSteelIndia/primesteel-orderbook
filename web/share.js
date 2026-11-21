@@ -66,15 +66,20 @@ function estimateFromCart() {
 }
 
 function estimateFromOrder(order) {
+  const singleLine = (order.lines_detail || []).length === 1;
+  const orderAct = Number(order.actual_weight) || 0;
   const rows = (order.lines_detail || []).map(l => {
-    const weighed = l.actual_weight !== null && l.actual_weight !== undefined;
+    const hasLineAct = l.actual_weight !== null && l.actual_weight !== undefined && l.actual_weight !== '' && !isNaN(Number(l.actual_weight)) && Number(l.actual_weight) > 0;
+    const weighed = hasLineAct || (singleLine && orderAct > 0) || (order.status === 'WEIGHED' && l.actual_weight !== null);
+    const weight = hasLineAct ? Number(l.actual_weight) : ((singleLine && orderAct > 0) ? orderAct : (l.actual_weight !== null && l.actual_weight !== undefined ? Number(l.actual_weight) : (l.est_weight != null ? Number(l.est_weight) : 0)));
+    const amount = weighed ? (weight * (l.rate || 0)) : (l.est_amount || (weight * (l.rate || 0)));
     return {
       name: l.name,
       pcs: l.pcs,
       weight_per_pc: l.weight_per_pc || 0,
-      weight: weighed ? l.actual_weight : l.est_weight,
+      weight,
       rate: l.rate || 0,
-      amount: weighed ? l.actual_amount : l.est_amount,
+      amount,
       weighed,
     };
   });
