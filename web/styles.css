@@ -582,46 +582,50 @@ body.is-locked { overflow: hidden; }
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);
   gap: clamp(16px, 3vw, 40px);
-  align-items: end;
+  align-items: start;
   padding-top: 14px;
 }
 
 .ruler__label {
   color: var(--steel);
-  padding-bottom: 6px;
+  padding-top: 13px;
 }
 
 .ruler__scale {
   position: relative;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  height: 34px;
-  border-bottom: 1px solid var(--line-strong);
+  height: 36px;
+  border-top: 1px solid var(--line-strong);
 }
 
 .ruler__scale span {
   position: relative;
   padding-top: 13px;
+  text-align: center;
   font-family: var(--mono);
   font-size: 9.5px;
   letter-spacing: 0.06em;
   color: var(--zinc);
+  font-variant-numeric: tabular-nums;
 }
 .ruler__scale span::before {
   content: "";
   position: absolute;
   top: 0;
-  left: 0;
+  left: 50%;
   width: 1px;
   height: 8px;
+  margin-left: -0.5px;
   background: var(--line-strong);
 }
 
+/* stocked span: first tick to last tick, sitting on the axis */
 .ruler__band {
   position: absolute;
-  left: 28.571%;
-  right: 0;
-  bottom: -1px;
+  top: -1px;
+  left: 7.1428%;
+  right: 7.1428%;
   height: 2px;
   background: var(--oxide);
 }
@@ -714,11 +718,16 @@ h2 {
   margin-top: clamp(10px, 1.6vw, 20px);
 }
 
-.stock__rows { border-top: 1px solid var(--line-strong); }
+.stock__rows {
+  border-top: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+}
 
 .row {
   position: relative;
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: 54px minmax(0, 1fr) minmax(0, 1.05fr) 40px;
   gap: 18px;
   align-items: center;
@@ -727,7 +736,7 @@ h2 {
   transition: background 0.35s var(--ease), color 0.35s var(--ease);
 }
 
-.row__idx { color: var(--zinc); align-self: start; padding-top: 4px; }
+.row__idx { color: var(--zinc); align-self: center; }
 
 .row__name {
   font-size: clamp(1.45rem, 2.5vw, 2.25rem);
@@ -790,7 +799,7 @@ h2 {
   top: calc(var(--head-h) + 24px);
   align-self: start;
   margin: 0;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 1 / 1;
   overflow: hidden;
   background: var(--paper-2);
   border: 1px solid var(--line);
@@ -846,8 +855,8 @@ h2 {
 .app {
   display: flex;
   flex-direction: column;
-  min-height: clamp(240px, 25vw, 320px);
-  padding: clamp(22px, 3vw, 38px);
+  min-height: 240px;
+  padding: clamp(22px, 2.8vw, 34px);
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   transition: background 0.4s var(--ease), color 0.4s var(--ease);
@@ -863,17 +872,17 @@ h2 {
 }
 
 .app__ico {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.1;
+  stroke-width: 1.15;
   flex: none;
   transition: color 0.4s var(--ease);
 }
 
 .app h3 {
-  margin-top: clamp(28px, 3.4vw, 44px);
+  margin-top: clamp(24px, 3vw, 38px);
   font-size: clamp(1.45rem, 2.3vw, 1.95rem);
   font-weight: 700;
   font-stretch: 103%;
@@ -1051,6 +1060,29 @@ h2 {
 }
 
 .brands__grid .mono { color: var(--zinc); font-size: 9px; }
+
+.brands__cta { background: var(--paper-2); }
+
+.brands__cta .brands__name {
+  font-size: clamp(1.15rem, 1.75vw, 1.5rem);
+  letter-spacing: -0.02em;
+}
+
+.brands__ask {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid currentColor;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--oxide-deep);
+  transition: color 0.25s var(--ease);
+}
+.brands__ask:hover { color: var(--ink); }
 
 /* -- 12 · contact --------------------------------------------------------- */
 
@@ -1517,9 +1549,10 @@ h2 {
 
   .eyebrow__sep { display: none; }
 
-  .ruler { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .ruler__label { padding-bottom: 0; }
-  .ruler__scale span { font-size: 8.5px; }
+  .ruler { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .ruler__label { padding-top: 0; }
+  .ruler__scale { height: 32px; }
+  .ruler__scale span { font-size: 8.5px; padding-top: 12px; }
 
   .mills { margin-top: 14px; }
   .mills__label { display: none; }
@@ -1531,7 +1564,7 @@ h2 {
   .sec-head__row { padding-bottom: 18px; }
 
   .app { padding: 22px 20px 26px; }
-  .app__ico { width: 38px; height: 38px; }
+  .app__ico { width: 42px; height: 42px; }
 
   .brands__grid li { min-height: 138px; padding: 16px; gap: 18px; }
   .brands__name { font-size: 1.35rem; }
