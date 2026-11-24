@@ -9,12 +9,12 @@
 const EST_W = 1000;          // logical px, scaled up for sharpness
 const EST_SCALE = 2;         // 2000 px wide output
 const C = {
-  navy: '#1b3554',
-  navyDeep: '#12263c',
-  navySoft: '#eaf0f7',
-  ink: '#0e1a2b',
-  inkSoft: '#334155',
-  muted: '#64748b',
+  navy: '#212529',
+  navyDeep: '#16181b',
+  navySoft: '#edf0f2',
+  ink: '#181a1d',
+  inkSoft: '#383c42',
+  muted: '#5e646d',
   line: '#e3e8ee',
   headBg: '#f7f9fc',
   green: '#0c6b47',

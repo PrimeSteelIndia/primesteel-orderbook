@@ -1,21 +1,21 @@
 /* ============================================================================
    PRIME STEEL — landing styles
-   Palette: 60% Sand (Warm architectural canvas), 30% Navy (Commanding typography
-   & structural depth), 10% Tangerine (High-energy industrial focal accents).
+   Palette: 60% Sand (Warm architectural canvas), 30% Grey (Commanding charcoal
+   & slate typography, structural depth), 10% Tangerine (High-energy industrial focal accents).
    Type: Archivo (wide grotesque) + IBM Plex Mono (spec labels).
    No frameworks, no resets with baggage. One file, mobile-first rules last.
    ========================================================================== */
 
-/* -- 01 · tokens (60% Sand · 30% Navy · 10% Tangerine) -------------------- */
+/* -- 01 · tokens (60% Sand · 30% Grey · 10% Tangerine) -------------------- */
 
 :root {
-  /* 30% Navy — Typography, Headings & Structural Authority */
-  --ink: #0c1e36;
-  --ink-2: #122744;
-  --ink-3: #081426;
-  --graphite: #203652;
-  --steel: #3b5375;
-  --zinc: #60799c;
+  /* 30% Grey — Deep Charcoal & Slate Typography, Headings & Structural Depth */
+  --ink: #1a1d21;
+  --ink-2: #25282d;
+  --ink-3: #111315;
+  --graphite: #383c42;
+  --steel: #565c65;
+  --zinc: #7e8691;
 
   /* 60% Sand — Canvas, Card Surfaces, Elevation & Warmth */
   --paper: #f4efea;

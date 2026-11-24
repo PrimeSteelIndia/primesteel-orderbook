@@ -304,44 +304,7 @@ def _seed_db_if_empty(conn: sqlite3.Connection) -> None:
                         )
                     )
         
-        orders_count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
-        if orders_count == 0:
-            seed_orders_file = DATA_DIR / "seed_orders.json"
-            if seed_orders_file.exists():
-                sdata = json.loads(seed_orders_file.read_text(encoding="utf-8"))
-                for o in sdata.get("orders", []):
-                    conn.execute(
-                        """INSERT OR IGNORE INTO orders (id, order_no, seq, year, client_id, created_at,
-                               customer_name, customer_phone, worker, note, status,
-                               est_weight, est_amount, actual_weight, actual_amount,
-                               weighed_at, exported_at, export_error)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (
-                            o.get("id"), o.get("order_no"), o.get("seq"), o.get("year"), o.get("client_id"), o.get("created_at"),
-                            o.get("customer_name"), o.get("customer_phone"), o.get("worker"), o.get("note"), o.get("status"),
-                            o.get("est_weight"), o.get("est_amount"), o.get("actual_weight"), o.get("actual_amount"),
-                            o.get("weighed_at"), o.get("exported_at"), o.get("export_error")
-                        )
-                    )
-                for l in sdata.get("lines", []):
-                    conn.execute(
-                        """INSERT OR IGNORE INTO order_lines (id, order_id, line_no, item_id, name, category,
-                               pcs, weight_per_pc, rate, actual_weight, narration,
-                               entry_unit, entry_qty, unit, qty)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (
-                            l.get("id"), l.get("order_id"), l.get("line_no"), l.get("item_id"), l.get("name"), l.get("category"),
-                            l.get("pcs"), l.get("weight_per_pc"), l.get("rate"), l.get("actual_weight"), l.get("narration"),
-                            l.get("entry_unit"), l.get("entry_qty"), l.get("unit"), l.get("qty")
-                        )
-                    )
-                for c in sdata.get("counters", []):
-                    c_name = c[0] if isinstance(c, (list, tuple)) else c.get("name")
-                    c_val = c[1] if isinstance(c, (list, tuple)) else c.get("value")
-                    conn.execute(
-                        "INSERT OR IGNORE INTO counters (name, value) VALUES (?, ?)",
-                        (c_name, c_val)
-                    )
+        # NEVER auto-seed orders or weights: orders must only be created or modified by users.
     except Exception as exc:
         log_event("seed.error", str(exc))
 
