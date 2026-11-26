@@ -391,7 +391,7 @@ def item_row(row: sqlite3.Row) -> dict:
     alt_factor = row["alt_factor"] if "alt_factor" in keys and row["alt_factor"] else (row["weight_per_pc"] if alt_u == "pcs" else 0)
     alt_u2 = row["alt_unit2"] if "alt_unit2" in keys and row["alt_unit2"] else ""
     alt_u2_factor = row["alt_unit2_factor"] if "alt_unit2_factor" in keys and row["alt_unit2_factor"] else 0
-    order_u = row["order_unit"] if "order_unit" in keys and row["order_unit"] else main_u
+    order_u = row["order_unit"] if "order_unit" in keys and row["order_unit"] else "pcs"
     return {
         "id": row["id"],
         "name": row["name"],
@@ -1260,7 +1260,7 @@ def update_item(item_id: int, patch: dict) -> dict:
         if not row:
             raise KeyError("Item not found")
         if "name" in patch:
-            name = str(patch["name"]).strip()
+            name = str(patch["name"] or "").strip()
             if not name:
                 raise ValueError("Item name cannot be empty.")
             dupe = conn.execute(
@@ -1272,37 +1272,47 @@ def update_item(item_id: int, patch: dict) -> dict:
             values += [name, norm_name(name)]
         if "category" in patch:
             fields.append("category=?")
-            values.append(str(patch["category"]).strip().upper()[:24])
+            values.append(str(patch["category"] or "").strip().upper()[:24])
         if "rate" in patch:
+            r_val = money(patch["rate"])
+            if r_val < 0:
+                raise ValueError("Rate cannot be negative.")
             fields.append("rate=?")
-            values.append(money(patch["rate"]))
+            values.append(r_val)
         if "weight_per_pc" in patch:
+            w_val = weight(patch["weight_per_pc"])
+            if w_val < 0:
+                raise ValueError("Weight cannot be negative.")
             fields.append("weight_per_pc=?")
-            values.append(weight(patch["weight_per_pc"]))
+            values.append(w_val)
+            # Keep alt_factor in sync when alt_unit is pcs and caller didn't pass a separate alt_factor
+            if "alt_factor" not in patch and (row["alt_unit"] or "").lower() == "pcs":
+                fields.append("alt_factor=?")
+                values.append(w_val)
         if "active" in patch:
             fields.append("active=?")
             values.append(1 if patch["active"] else 0)
         if "main_unit" in patch:
             fields.append("main_unit=?")
-            values.append(str(patch["main_unit"]).strip() or "kg")
+            values.append(str(patch["main_unit"] or "").strip().lower() or "kg")
         if "alt_unit" in patch:
             fields.append("alt_unit=?")
-            values.append(str(patch["alt_unit"]).strip())
+            values.append(str(patch["alt_unit"] or "").strip().lower())
         if "alt_factor" in patch:
             fields.append("alt_factor=?")
-            values.append(float(patch["alt_factor"] or 0))
+            values.append(max(0.0, float(patch["alt_factor"] or 0)))
         if "alt_unit2" in patch:
             fields.append("alt_unit2=?")
-            values.append(str(patch["alt_unit2"]).strip())
+            values.append(str(patch["alt_unit2"] or "").strip().lower())
         if "alt_unit2_factor" in patch:
             fields.append("alt_unit2_factor=?")
-            values.append(float(patch["alt_unit2_factor"] or 0))
+            values.append(max(0.0, float(patch["alt_unit2_factor"] or 0)))
         if "length_per_pc" in patch:
             fields.append("length_per_pc=?")
-            values.append(float(patch["length_per_pc"] or 0))
+            values.append(max(0.0, float(patch["length_per_pc"] or 0)))
         if "order_unit" in patch:
             fields.append("order_unit=?")
-            values.append(str(patch["order_unit"]).strip())
+            values.append(str(patch["order_unit"] or "").strip().lower() or "pcs")
         if not fields:
             return item_row(row)
         fields.append("updated_at=?")
@@ -1312,6 +1322,9 @@ def update_item(item_id: int, patch: dict) -> dict:
         conn.commit()
         row = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
         return item_row(row)
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -1340,7 +1353,7 @@ def create_item(payload: dict) -> dict:
                 str(payload.get("alt_unit2") or "").strip(),
                 float(payload.get("alt_unit2_factor") or 0),
                 float(payload.get("length_per_pc") or 0),
-                str(payload.get("order_unit") or "").strip().lower(),
+                str(payload.get("order_unit") or "pcs").strip().lower() or "pcs",
                 now_ms(),
             ),
         )
@@ -1432,7 +1445,7 @@ def bulk_update_items(rows: list[dict]) -> dict:
                             rate or 0, wp or 0,
                             main_unit or "kg", alt_unit or "", alt_factor or 0,
                             alt_unit2 or "", alt_unit2_factor or 0, length_per_pc or 0,
-                            order_unit or "",
+                            order_unit or "pcs",
                             now_ms(),
                         ),
                     )

@@ -1149,7 +1149,11 @@ async function saveItemField(input) {
     });
     Object.assign(item, res.item);
     input.classList.remove('saving');
-    input.value = item[field] !== undefined ? item[field] : '';
+    if (field === 'rate' || field === 'weight_per_pc') {
+      input.value = item[field] ? item[field] : '';
+    } else {
+      input.value = item[field] !== undefined ? item[field] : '';
+    }
     if (field === 'category') {
       const cats = [...new Set(A.items.map(i => i.category).filter(Boolean))].sort();
       const sel = $('#catSel');
@@ -1195,8 +1199,8 @@ function openEditItem(item) {
           <input class="input" id="eiMainUnit" value="${esc(item.main_unit || 'kg')}" placeholder="kg">
         </div>
         <div class="field" style="flex:1">
-          <label for="eiOrderUnit">Order Unit (default = main unit)</label>
-          <input class="input" id="eiOrderUnit" value="${esc(item.order_unit || '')}" placeholder="pcs">
+          <label for="eiOrderUnit">Order Unit (default = pcs)</label>
+          <input class="input" id="eiOrderUnit" value="${esc(item.order_unit || 'pcs')}" placeholder="pcs">
         </div>
       </div>
       <div class="row" style="gap:10px;margin-bottom:12px">
@@ -1243,6 +1247,9 @@ function openEditItem(item) {
       $('#eiSave', node).addEventListener('click', async () => {
         const name = $('#eiName', node).value.trim();
         if (!name) { toast('Please enter item name', 'error'); $('#eiName', node).focus(); return; }
+        const saveBtn = $('#eiSave', node);
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
         try {
           await api(`/api/items/${item.id}/update`, {
             method: 'POST',
@@ -1251,7 +1258,7 @@ function openEditItem(item) {
               category: $('#eiCat', node).value.trim().toUpperCase(),
               rate: parseNumber($('#eiRate', node).value),
               main_unit: ($('#eiMainUnit', node).value.trim() || 'kg').toLowerCase(),
-              order_unit: ($('#eiOrderUnit', node).value.trim() || '').toLowerCase(),
+              order_unit: ($('#eiOrderUnit', node).value.trim() || 'pcs').toLowerCase(),
               alt_unit: ($('#eiAltUnit', node).value.trim() || '').toLowerCase(),
               alt_factor: parseNumber($('#eiAltFactor', node).value),
               alt_unit2: ($('#eiAltUnit2', node).value.trim() || '').toLowerCase(),
@@ -1263,7 +1270,11 @@ function openEditItem(item) {
           close();
           toast('Item updated', 'success');
           await loadItems();
-        } catch (err) { toast(err.message, 'error'); }
+        } catch (err) {
+          toast(err.message, 'error');
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save item';
+        }
       });
     }
   });
@@ -1277,7 +1288,7 @@ async function deleteItem(item) {
       method: 'POST',
       body: JSON.stringify({ hard: false }),
     });
-    if (res.deactivated) {
+    if (res.action === 'deactivated') {
       toast('Item has past orders, so it was hidden instead', 'info');
     } else {
       toast('Item deleted', 'success');
@@ -1365,7 +1376,7 @@ function openAddItem() {
               category: $('#aiCat', node).value.trim().toUpperCase(),
               rate: parseNumber($('#aiRate', node).value),
               main_unit: ($('#aiMainUnit', node).value.trim() || 'kg').toLowerCase(),
-              order_unit: ($('#aiOrderUnit', node).value.trim() || '').toLowerCase(),
+              order_unit: ($('#aiOrderUnit', node).value.trim() || 'pcs').toLowerCase(),
               alt_unit: ($('#aiAltUnit', node).value.trim() || '').toLowerCase(),
               alt_factor: parseNumber($('#aiAltFactor', node).value),
               alt_unit2: ($('#aiAltUnit2', node).value.trim() || '').toLowerCase(),
