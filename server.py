@@ -34,6 +34,7 @@ from urllib.parse import urlparse, parse_qs
 
 import excel_sync
 import tunnel
+import turso_db
 
 try:  # make rupee signs safe on old Windows consoles
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -244,6 +245,12 @@ CREATE TABLE IF NOT EXISTS log (
 
 
 def db() -> sqlite3.Connection:
+    t_url = os.environ.get("TURSO_DATABASE_URL", "").strip()
+    t_tok = os.environ.get("TURSO_AUTH_TOKEN", "").strip()
+    if t_url and t_tok:
+        conn = turso_db.TursoConn(t_url, t_tok)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn  # type: ignore[return-value]
     conn = sqlite3.connect(DB_FILE, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
