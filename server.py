@@ -292,7 +292,8 @@ def _seed_db_if_empty(conn: sqlite3.Connection) -> None:
     NEVER modifies, deletes, or overwrites existing data."""
     try:
         items_count = conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-        if items_count == 0:
+        cleared_all = conn.execute("SELECT COUNT(*) FROM log WHERE kind='items.cleared_all'").fetchone()[0]
+        if items_count == 0 and cleared_all == 0:
             seed_items_file = DATA_DIR / "seed_items.json"
             if seed_items_file.exists():
                 items = json.loads(seed_items_file.read_text(encoding="utf-8"))
@@ -1110,6 +1111,18 @@ def delete_item(item_id: int, hard: bool = False) -> dict:
         return {"ok": True, "action": action}
     finally:
         conn.close()
+
+
+def delete_all_items() -> dict:
+    conn = db()
+    try:
+        cur = conn.execute("DELETE FROM items")
+        conn.commit()
+        deleted = cur.rowcount
+    finally:
+        conn.close()
+    log_event("items.cleared_all", str(deleted))
+    return {"ok": True, "deleted": deleted}
 
 
 def submit_weights(order_id: str, weights: dict[str, float], require_all: bool = False) -> dict:
@@ -2259,6 +2272,10 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             self._require_admin()
             return self._json({"item": update_item(int(m.group(1)), self._body())})
+
+        if path == "/api/items/clear-all":
+            self._require_admin()
+            return self._json(delete_all_items())
 
         m = re.fullmatch(r"/api/items/(\d+)/delete", path)
         if m:

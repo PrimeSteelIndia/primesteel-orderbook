@@ -299,7 +299,7 @@ function paintOrders() {
           <th class="num hide-sm">Estimate</th>
           <th class="num">Amount</th>
           <th>Status</th>
-          <th class="actions">Excel</th>
+          <th class="actions">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -317,8 +317,9 @@ function paintOrders() {
             <td class="num"><b>${money(o.status === 'WEIGHED' ? o.actual_amount : o.est_amount)}</b>
               ${o.status === 'WEIGHED' && Math.abs(diff) >= 1 ? `<span class="sub" style="color:${diff > 0 ? '#9a5b06' : '#0c6b47'}">${diff > 0 ? '+' : ''}${money(diff)}</span>` : ''}</td>
             <td><span class="pill ${open ? 'pill-open' : 'pill-done'}">${open ? 'To weigh' : 'Ready'}</span></td>
-            <td class="actions">
+            <td class="actions" style="white-space:nowrap">
               <button class="btn btn-sm btn-soft" data-excel="${o.id}" title="Download for Excel">${icon('download', 'i i-sm')}</button>
+              <button class="btn btn-sm btn-danger" data-del-order="${o.id}" data-order-no="${esc(o.order_no)}" title="Delete order" style="margin-left:4px">${icon('trash', 'i i-sm')}</button>
             </td>
           </tr>`;
         }).join('')}
@@ -327,7 +328,7 @@ function paintOrders() {
 
   wrap.querySelectorAll('tr[data-order]').forEach(tr => {
     tr.addEventListener('click', e => {
-      if (e.target.closest('[data-excel]')) return;
+      if (e.target.closest('[data-excel]') || e.target.closest('[data-del-order]')) return;
       openOrderDrawer(tr.dataset.order);
     });
   });
@@ -337,6 +338,21 @@ function paintOrders() {
       try { await downloadFrom('/api/export/order/' + btn.dataset.excel); }
       catch (err) { toast(err.message, 'error'); }
       finally { btn.disabled = false; }
+    });
+  });
+  wrap.querySelectorAll('[data-del-order]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const no = btn.dataset.orderNo || 'this order';
+      if (!confirm(`Delete ${no}? This cannot be undone.`)) return;
+      btn.disabled = true;
+      try {
+        await api(`/api/orders/${btn.dataset.delOrder}/delete`, { method: 'POST', body: '{}' });
+        toast(`${no} deleted`, 'success');
+        refreshAll();
+      } catch (err) {
+        toast(err.message, 'error');
+        btn.disabled = false;
+      }
     });
   });
 }
@@ -863,6 +879,7 @@ function renderItemsShell() {
         <button class="btn btn-sm" id="addItemBtn">${icon('plus', 'i i-sm')} Add item</button>
         <button class="btn btn-sm" id="bulkBtn">${icon('sheet', 'i i-sm')} Bulk update</button>
         <button class="btn btn-sm" id="csvBtn">${icon('download', 'i i-sm')} CSV</button>
+        <button class="btn btn-sm btn-danger" id="clearAllItemsBtn" title="Delete all items and rates">${icon('trash', 'i i-sm')} Delete all</button>
       </div>
     </div>
     <div id="itemsAlert"></div>
@@ -936,6 +953,21 @@ function renderItemsShell() {
 
   $('#addItemBtn').addEventListener('click', openAddItem);
   $('#bulkBtn').addEventListener('click', openBulk);
+  $('#clearAllItemsBtn').addEventListener('click', async () => {
+    if (!A.items.length) { toast('Rate list is already empty'); return; }
+    if (!confirm(`Delete ALL ${A.items.length} items and rates? Existing orders will NOT be deleted.`)) return;
+    const btn = $('#clearAllItemsBtn');
+    btn.disabled = true;
+    try {
+      await api('/api/items/clear-all', { method: 'POST', body: '{}' });
+      toast('All items deleted. Use Bulk update to paste new rates.', 'success');
+      await loadItems();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
   $('#csvBtn').addEventListener('click', downloadItemsCsv);
   $('#itemSearch').addEventListener('input', debounce(e => {
     A.itemQuery = e.target.value.trim();
