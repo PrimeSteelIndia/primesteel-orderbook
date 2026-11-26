@@ -12,8 +12,8 @@ const S = {
   customerName: '',
   customerPhone: '',
   note: '',
-  editingOrderId: null,
-  editingOrderNo: '',
+  editingOrderId: store.get('editingOrderId', null),
+  editingOrderNo: store.get('editingOrderNo', ''),
   itemQuery: '',
   category: '',
   subCategory: '',
@@ -126,14 +126,56 @@ async function boot() {
   setInterval(flushOutbox, 20000);
 }
 
+function normItemName(name) {
+  return String(name || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function resolveLineItem(line) {
+  let item = itemById(line.item_id);
+  if (!item && line.name) {
+    const n = normItemName(line.name);
+    item = S.items.find(i => normItemName(i.name) === n);
+  }
+  if (item) return item;
+  if (line.name) {
+    return {
+      id: line.item_id,
+      name: line.name,
+      category: line.category || '',
+      rate: Number(line.rate) || 0,
+      weight_per_pc: Number(line.weight_per_pc) || 0,
+      main_unit: 'kg',
+      alt_unit: 'pcs',
+      alt_factor: Number(line.weight_per_pc) || 0,
+      alt_unit2: '',
+      alt_unit2_factor: 0,
+      length_per_pc: 0,
+      order_unit: line.entry_unit || line.unit || 'pcs',
+    };
+  }
+  return null;
+}
+
 function sanitizeCart() {
   const ids = new Set(S.items.map(i => i.id));
-  S.cart = S.cart.filter(l => ids.has(l.item_id) && l.pcs > 0);
+  const byName = new Map(S.items.map(i => [normItemName(i.name), i]));
+  S.cart = S.cart.filter(l => {
+    if ((l.pcs || 0) <= 0) return false;
+    if (ids.has(l.item_id)) return true;
+    if (l.name) {
+      const hit = byName.get(normItemName(l.name));
+      if (hit) { l.item_id = hit.id; return true; }
+      return Boolean(S.editingOrderId);
+    }
+    return false;
+  });
   persistCart();
 }
 
 function persistCart() {
   store.set('cart', S.cart);
+  store.set('editingOrderId', S.editingOrderId);
+  store.set('editingOrderNo', S.editingOrderNo || '');
 }
 
 function itemById(id) {
@@ -437,7 +479,7 @@ function calcItemEntry(item, entryQty, entryUnit, customRate = null) {
 function cartTotals() {
   let pcs = 0, weight = 0, amount = 0;
   for (const line of S.cart) {
-    const item = itemById(line.item_id);
+    const item = resolveLineItem(line);
     if (!item) continue;
     const calc = calcItemEntry(
       item,
@@ -1015,7 +1057,7 @@ function renderReview() {
       </div>
       <div class="rev-list" id="lines">
         ${S.cart.map((line, idx) => {
-          const item = itemById(line.item_id);
+          const item = resolveLineItem(line);
           if (!item) return '';
           const qtyVal = line.entry_qty !== undefined ? line.entry_qty : line.pcs;
           const unitVal = line.entry_unit || line.unit || item.order_unit || item.main_unit || 'kg';
@@ -1160,7 +1202,7 @@ function renderReview() {
   const updateLineQty = (idx, val) => {
     const line = S.cart[idx];
     if (!line) return;
-    const item = itemById(line.item_id);
+    const item = resolveLineItem(line);
     if (!item) return;
     const next = Math.round((Number(val) || 0) * 1000) / 1000;
     if (next <= 0) {
@@ -1216,7 +1258,7 @@ function renderReview() {
       const idx = Number(rstep.dataset.rstep);
       const line = S.cart[idx];
       if (!line) return;
-      const item = itemById(line.item_id);
+      const item = resolveLineItem(line);
       const curRate = (line.rate !== undefined && line.rate !== null) ? Number(line.rate) : Number((item && item.rate) || 0);
       updateLineRate(idx, curRate + Number(rstep.dataset.delta));
     }
@@ -1284,17 +1326,24 @@ async function saveOrder() {
   const btn = $('#saveBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
-  const linesPayload = S.cart.map(l => ({
-    item_id: l.item_id,
-    pcs: l.pcs,
-    qty: l.qty !== undefined ? l.qty : l.pcs,
-    unit: l.unit || 'pcs',
-    entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
-    entry_unit: l.entry_unit || l.unit || 'pcs',
-    rate: (l.rate !== undefined && l.rate !== null) ? Number(l.rate) : undefined,
-    narration: l.narration || '',
-    actual_weight: l.actual_weight !== undefined ? l.actual_weight : null,
-  }));
+  const linesPayload = S.cart.map(l => {
+    const item = resolveLineItem(l);
+    return {
+      id: l.id || undefined,
+      item_id: l.item_id,
+      name: l.name || (item && item.name) || '',
+      category: l.category || (item && item.category) || '',
+      weight_per_pc: l.weight_per_pc !== undefined ? l.weight_per_pc : (item ? item.weight_per_pc : 0),
+      pcs: l.pcs,
+      qty: l.qty !== undefined ? l.qty : l.pcs,
+      unit: l.unit || 'pcs',
+      entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
+      entry_unit: l.entry_unit || l.unit || 'pcs',
+      rate: (l.rate !== undefined && l.rate !== null) ? Number(l.rate) : undefined,
+      narration: l.narration || '',
+      actual_weight: l.actual_weight !== undefined ? l.actual_weight : null,
+    };
+  });
 
   const payload = {
     client_id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
@@ -1649,17 +1698,24 @@ function startEditingOrder(order) {
   S.customerPhone = order.customer_phone || '';
   S.worker = order.worker || S.worker || '';
   S.note = order.note || '';
-  S.cart = (order.lines_detail || []).map(l => ({
-    item_id: l.item_id,
-    pcs: l.pcs,
-    qty: l.qty,
-    unit: l.unit,
-    entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
-    entry_unit: l.entry_unit || l.unit || 'pcs',
-    rate: l.rate,
-    narration: l.narration || '',
-    actual_weight: l.actual_weight,
-  }));
+  S.cart = (order.lines_detail || []).map(l => {
+    const curItem = S.items.find(i => i.id === l.item_id) || S.items.find(i => normItemName(i.name) === normItemName(l.name));
+    return {
+      id: l.id,
+      item_id: curItem ? curItem.id : l.item_id,
+      name: l.name,
+      category: l.category || (curItem ? curItem.category : ''),
+      weight_per_pc: l.weight_per_pc !== undefined ? l.weight_per_pc : (curItem ? curItem.weight_per_pc : 0),
+      pcs: l.pcs,
+      qty: l.qty,
+      unit: l.unit,
+      entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
+      entry_unit: l.entry_unit || l.unit || 'pcs',
+      rate: l.rate,
+      narration: l.narration || '',
+      actual_weight: l.actual_weight,
+    };
+  });
   persistCart();
   go('#/review');
 }

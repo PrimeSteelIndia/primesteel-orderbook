@@ -600,6 +600,7 @@ function openEditOrderAdmin(order) {
     entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
     entry_unit: l.entry_unit || l.unit || 'pcs',
     narration: l.narration || '',
+    weight_per_pc: l.weight_per_pc,
     rate: l.rate,
     actual_weight: l.actual_weight,
   }));
@@ -785,6 +786,8 @@ function openEditOrderAdmin(order) {
               lines: lines.map(l => ({
                 id: l.id,
                 item_id: l.item_id,
+                name: l.name,
+                weight_per_pc: l.weight_per_pc,
                 pcs: l.pcs || 1,
                 qty: l.qty || l.entry_qty || 1,
                 unit: l.unit || l.entry_unit || 'pcs',

@@ -739,8 +739,7 @@ def recalc_order_totals(conn: sqlite3.Connection, order_id: str) -> None:
     order = conn.execute("SELECT status FROM orders WHERE id=?", (order_id,)).fetchone()
     if not order:
         return
-    old_status = order["status"]
-    new_status = "WEIGHED" if (old_status == "WEIGHED" or (lines and all_weighed and has_any_act)) else "OPEN"
+    new_status = "WEIGHED" if (lines and all_weighed and has_any_act) else "OPEN"
 
     conn.execute(
         """UPDATE orders SET
@@ -911,8 +910,27 @@ def update_order(order_id: str, payload: dict) -> dict:
             conn.execute("DELETE FROM order_lines WHERE order_id=?", (order_id,))
             for idx, line in enumerate(lines_in, start=1):
                 item_id = line.get("item_id")
-                item = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
-                if not item:
+                item = conn.execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone() if item_id is not None else None
+                if not item and line.get("name"):
+                    item = conn.execute("SELECT * FROM items WHERE norm=?", (norm_name(str(line.get("name"))),)).fetchone()
+                if item:
+                    item_dict = dict(item)
+                elif line.get("name"):
+                    item_dict = {
+                        "id": None,
+                        "name": str(line.get("name")).strip(),
+                        "category": str(line.get("category") or "").strip().upper(),
+                        "weight_per_pc": float(line.get("weight_per_pc") or 0),
+                        "rate": float(line.get("rate") or 0),
+                        "main_unit": "kg",
+                        "alt_unit": "pcs",
+                        "alt_factor": float(line.get("weight_per_pc") or 0),
+                        "alt_unit2": "",
+                        "alt_unit2_factor": 0,
+                        "length_per_pc": 0,
+                        "order_unit": str(line.get("unit") or line.get("entry_unit") or "pcs").strip(),
+                    }
+                else:
                     raise ValueError(f"Item {item_id} not found.")
 
                 if "pcs" in line and not line.get("qty") and not line.get("entry_qty"):
@@ -920,8 +938,7 @@ def update_order(order_id: str, payload: dict) -> dict:
                     raw_unit = "pcs"
                 else:
                     raw_qty = float(line.get("qty") or line.get("entry_qty") or line.get("pcs") or 1)
-                    raw_unit = str(line.get("unit") or line.get("entry_unit") or item["main_unit"] or "pcs").strip()
-                item_dict = dict(item)
+                    raw_unit = str(line.get("unit") or line.get("entry_unit") or item_dict["main_unit"] or "pcs").strip()
                 raw_rate = line.get("rate")
                 if raw_rate is not None and str(raw_rate).strip() != "":
                     try:
