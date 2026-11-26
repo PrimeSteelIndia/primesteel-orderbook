@@ -1009,7 +1009,10 @@ function renderReview() {
     </div>
 
     <div class="section">
-      <div class="section-title">Items (${S.cart.length})</div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Items (${S.cart.length})</span>
+        <button type="button" class="btn btn-sm btn-soft" id="addMoreItemsBtn">${icon('plus', 'i i-xs')} Add item</button>
+      </div>
       <div class="rev-list" id="lines">
         ${S.cart.map((line, idx) => {
           const item = itemById(line.item_id);
@@ -1078,6 +1081,9 @@ function renderReview() {
   `;
 
   $('#backBtn').addEventListener('click', () => go('#/'));
+  if ($('#addMoreItemsBtn')) {
+    $('#addMoreItemsBtn').addEventListener('click', () => go('#/'));
+  }
   if (isEditing && $('#cancelEditBtn')) {
     $('#cancelEditBtn').addEventListener('click', () => {
       const orderId = S.editingOrderId;

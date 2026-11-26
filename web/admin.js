@@ -794,7 +794,16 @@ function openEditOrderAdmin(order) {
   });
 }
 
-function openSelectOrderLineItem(onSelect) {
+async function openSelectOrderLineItem(onSelect) {
+  if (!A.items || !A.items.length) {
+    try {
+      const data = await api('/api/items?all=1');
+      A.items = data.items || [];
+    } catch (err) {
+      toast(err.message || 'Could not load items', 'error');
+      return;
+    }
+  }
   const { sheet, close } = openSheet({
     title: 'Select an item to add',
     sub: 'Choose an item from the rate list',
