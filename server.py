@@ -108,6 +108,29 @@ def norm_name(name: str) -> str:
     return re.sub(r"\s+", " ", (name or "")).strip().upper()
 
 
+def infer_category(name: str) -> str:
+    u = norm_name(name)
+    if not u:
+        return ""
+    if "COIL" in u:
+        return "COIL"
+    if "ANGLE" in u:
+        return "ANGLE"
+    if "(202)" in u or " 202 " in f" {u} ":
+        return "202"
+    if "(304)" in u or " 304 " in f" {u} ":
+        return "304"
+    if "CRC" in u or "RED SHEET" in u or "LOCKER PLATE" in u or "1MX2M GI" in u:
+        return "CRC"
+    if "GI" in u:
+        return "GI"
+    if "HR" in u:
+        return "HR"
+    if "DELIVERY" in u:
+        return "MISC"
+    return ""
+
+
 def local_dt(ms: int | None) -> str:
     if not ms:
         return ""
@@ -1358,6 +1381,7 @@ def bulk_update_items(rows: list[dict]) -> dict:
                 length_per_pc = None if length_per_pc in (None, "") else float(length_per_pc)
                 order_unit = raw.get("order_unit")
                 order_unit = None if order_unit in (None, "") else str(order_unit).strip()
+                cat_raw = str(raw.get("category") or "").strip().upper()[:24]
                 existing = conn.execute("SELECT * FROM items WHERE norm=?", (norm_name(name),)).fetchone()
                 if existing:
                     changes = {}
@@ -1365,6 +1389,12 @@ def bulk_update_items(rows: list[dict]) -> dict:
                         changes["rate"] = rate
                     if wp is not None and abs(existing["weight_per_pc"] - wp) > 0.0001:
                         changes["weight_per_pc"] = wp
+                    if cat_raw and (existing["category"] or "") != cat_raw:
+                        changes["category"] = cat_raw
+                    elif not (existing["category"] or "").strip():
+                        inferred = infer_category(name)
+                        if inferred:
+                            changes["category"] = inferred
                     if main_unit is not None and existing["main_unit"] != main_unit:
                         changes["main_unit"] = main_unit
                     if alt_unit is not None and existing["alt_unit"] != alt_unit:
@@ -1398,7 +1428,7 @@ def bulk_update_items(rows: list[dict]) -> dict:
                                active, sort, updated_at)
                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,0,?)""",
                         (
-                            name, norm_name(name), str(raw.get("category") or "").strip().upper()[:24],
+                            name, norm_name(name), cat_raw or infer_category(name),
                             rate or 0, wp or 0,
                             main_unit or "kg", alt_unit or "", alt_factor or 0,
                             alt_unit2 or "", alt_unit2_factor or 0, length_per_pc or 0,

@@ -952,7 +952,18 @@ function renderItemsShell() {
   }
 
   $('#addItemBtn').addEventListener('click', openAddItem);
-  $('#bulkBtn').addEventListener('click', openBulk);
+  $('#bulkBtn').addEventListener('click', () => openBulk(''));
+  const handleExcelPaste = e => {
+    const txt = (e.clipboardData && e.clipboardData.getData('text')) || '';
+    if (txt.includes('\t') || txt.includes('\n')) {
+      e.preventDefault();
+      openBulk(txt);
+    }
+  };
+  $('#itemSearch').addEventListener('paste', handleExcelPaste);
+  $('#itemsTable').addEventListener('paste', e => {
+    if (e.target.matches('[data-field="name"]')) handleExcelPaste(e);
+  });
   $('#clearAllItemsBtn').addEventListener('click', async () => {
     if (!A.items.length) { toast('Rate list is already empty'); return; }
     if (!confirm(`Delete ALL ${A.items.length} items and rates? Existing orders will NOT be deleted.`)) return;
@@ -1421,19 +1432,19 @@ function downloadItemsCsv() {
   toast('Rate list downloaded', 'success');
 }
 
-function openBulk() {
+function openBulk(initialText = '') {
   const { sheet, close } = openSheet({
     title: 'Bulk update the rate list',
-    sub: 'Paste rows copied from Excel.',
+    sub: 'Paste rows copied from Excel (Name + Rate, or full columns).',
     body: `
       <div class="note-box" style="margin-bottom:12px">${icon('sheet', 'i i-sm')}
-        <span>Columns: <b>name</b>, <b>rate per kg</b>, <b>weight per pc</b>, optional category.
-        Existing names are updated; new names are added. Leave a cell blank to keep the old value.</span>
+        <span>Columns: <b>name</b>, <b>rate per kg</b>, optional <b>weight per pc</b>, optional <b>category</b>.
+        Matching names update rate only (weight &amp; category stay the same unless given). Mismatched names create new items.</span>
       </div>
       <textarea class="textarea" id="bulkText" style="min-height:190px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px"
-        placeholder="PVC (202) 20G	186.44	25.2
-PVC (304) 20G	295.00	25.6
-8X4 CRC 18G	83.50	28.7"></textarea>
+        placeholder="PVC (202) 20G	186.44
+PVC (304) 20G	295.00
+8X4 CRC 18G	83.50">${esc(typeof initialText === 'string' ? initialText : '')}</textarea>
       <div style="height:12px"></div>
       <div id="bulkPreview"></div>
       <div class="sheet-actions">
