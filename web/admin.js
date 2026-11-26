@@ -593,8 +593,8 @@ function openEditOrderAdmin(order) {
     sub: `${order.lines_detail.length} line(s) · Modify customer, items, units, or narrations`,
     body: `
       <div class="field" style="margin-bottom:10px">
-        <label for="eoCustName">Customer name</label>
-        <input class="input" id="eoCustName" value="${esc(order.customer_name || '')}" placeholder="Customer name">
+        <label for="eoCustName">Customer name <span style="color:var(--red)">*</span></label>
+        <input class="input" id="eoCustName" value="${esc(order.customer_name || '')}" placeholder="Customer name (required)">
       </div>
       <div class="field" style="margin-bottom:10px">
         <label for="eoCustPhone">Phone number</label>
@@ -632,20 +632,28 @@ function openEditOrderAdmin(order) {
               <div style="font-weight:700;font-size:14px">${esc(l.name)}</div>
               <button class="btn btn-xs btn-ghost" data-rm-line="${idx}" style="color:#b42318;padding:2px 6px">${icon('close', 'i i-xs')}</button>
             </div>
-            <div class="row" style="gap:8px;margin-bottom:8px">
+            <div class="row" style="gap:8px;margin-bottom:8px;align-items:flex-end">
               <div class="field" style="flex:1">
                 <label style="font-size:11px">Quantity</label>
-                <input class="input input-sm" data-line-qty="${idx}" inputmode="decimal" value="${l.entry_qty || l.qty || l.pcs}">
+                <div class="mini-step" style="height:36px">
+                  <button type="button" data-qstep="${idx}" data-delta="-1" style="width:32px;font-size:16px">−</button>
+                  <input data-line-qty="${idx}" inputmode="decimal" value="${l.entry_qty || l.qty || l.pcs}" style="font-size:14px">
+                  <button type="button" data-qstep="${idx}" data-delta="1" style="width:32px;font-size:16px">+</button>
+                </div>
               </div>
-              <div class="field" style="width:110px">
+              <div class="field" style="width:96px">
                 <label style="font-size:11px">Unit</label>
-                <select class="select input-sm" data-line-unit="${idx}">
+                <select class="select input-sm" data-line-unit="${idx}" style="height:36px">
                   ${['pcs', 'kg', 'feet', 'inch', 'metre', 'bundle', 'sheet'].map(u => `<option value="${u}"${u === (l.entry_unit || l.unit) ? ' selected' : ''}>${u}</option>`).join('')}
                 </select>
               </div>
-              <div class="field" style="width:100px">
+              <div class="field" style="width:130px">
                 <label style="font-size:11px">Rate (₹/kg)</label>
-                <input class="input input-sm" data-line-rate="${idx}" inputmode="decimal" value="${l.rate || 0}">
+                <div class="mini-step" style="height:36px">
+                  <button type="button" data-rstep="${idx}" data-delta="-1" style="width:30px;font-size:16px">−</button>
+                  <input data-line-rate="${idx}" inputmode="decimal" value="${l.rate || 0}" style="font-size:14px">
+                  <button type="button" data-rstep="${idx}" data-delta="1" style="width:30px;font-size:16px">+</button>
+                </div>
               </div>
             </div>
             <div class="field">
@@ -659,6 +667,27 @@ function openEditOrderAdmin(order) {
           btn.addEventListener('click', () => {
             const idx = Number(btn.dataset.rmLine);
             lines.splice(idx, 1);
+            renderLines();
+          });
+        });
+
+        wrap.querySelectorAll('[data-qstep]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.qstep);
+            const cur = Number(lines[idx].entry_qty || lines[idx].qty || lines[idx].pcs) || 1;
+            const next = Math.max(0.1, Math.round((cur + Number(btn.dataset.delta)) * 100) / 100);
+            lines[idx].entry_qty = next;
+            lines[idx].qty = next;
+            lines[idx].pcs = Math.max(1, Math.round(next));
+            renderLines();
+          });
+        });
+
+        wrap.querySelectorAll('[data-rstep]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.rstep);
+            const cur = Number(lines[idx].rate) || 0;
+            lines[idx].rate = Math.max(0, Math.round((cur + Number(btn.dataset.delta)) * 100) / 100);
             renderLines();
           });
         });
@@ -717,6 +746,12 @@ function openEditOrderAdmin(order) {
       });
 
       $('#eoSaveBtn', node).addEventListener('click', async () => {
+        const custName = $('#eoCustName', node).value.trim();
+        if (!custName) {
+          toast('Customer name is required', 'error');
+          $('#eoCustName', node).focus();
+          return;
+        }
         if (!lines.length) {
           toast('Order must have at least one line', 'error');
           return;

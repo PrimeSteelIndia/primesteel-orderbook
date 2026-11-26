@@ -304,6 +304,21 @@ def _seed_db_if_empty(conn: sqlite3.Connection) -> None:
                         )
                     )
         
+        customers_count = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+        if customers_count == 0:
+            seed_cust_file = DATA_DIR / "seed_customers.json"
+            if seed_cust_file.exists():
+                custs = json.loads(seed_cust_file.read_text(encoding="utf-8"))
+                for c in custs:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO customers (name, norm, phone, gstin, address, updated_at)
+                           VALUES (?,?,?,?,?,?)""",
+                        (
+                            c.get("name", ""), c.get("norm", ""), c.get("phone", ""),
+                            c.get("gstin", ""), c.get("address", ""), c.get("updated_at", now_ms()),
+                        ),
+                    )
+
         # NEVER auto-seed orders or weights: orders must only be created or modified by users.
     except Exception as exc:
         log_event("seed.error", str(exc))
@@ -710,6 +725,9 @@ def create_order(payload: dict) -> dict:
     lines_in = payload.get("lines") or []
     if not lines_in:
         raise ValueError("An order needs at least one item.")
+    cust_name = (payload.get("customer_name") or "").strip()[:120]
+    if not cust_name:
+        raise ValueError("Customer name is required.")
 
     conn = db()
     try:
@@ -740,7 +758,17 @@ def create_order(payload: dict) -> dict:
             else:
                 raw_qty = float(line.get("qty") or line.get("entry_qty") or line.get("pcs") or 1)
                 raw_unit = str(line.get("unit") or line.get("entry_unit") or item["main_unit"] or "pcs").strip()
-            res = resolve_quantity(item, raw_qty, raw_unit)
+            item_dict = dict(item)
+            raw_rate = line.get("rate")
+            if raw_rate is not None and str(raw_rate).strip() != "":
+                try:
+                    custom_rate = float(raw_rate)
+                    if custom_rate >= 0:
+                        item_dict["rate"] = custom_rate
+                except (TypeError, ValueError):
+                    pass
+
+            res = resolve_quantity(item_dict, raw_qty, raw_unit)
             narration = str(line.get("narration") or "").strip()[:200]
 
             act_w = line.get("actual_weight")
@@ -751,7 +779,7 @@ def create_order(payload: dict) -> dict:
 
             est_weight += res["est_weight"]
             est_amount += res["est_amount"]
-            prepared.append((idx, item, res, narration, act_w))
+            prepared.append((idx, item_dict, res, narration, act_w))
 
         order_no, seq, year = next_order_no(conn)
         order_id = str(uuid.uuid4())
@@ -819,6 +847,8 @@ def update_order(order_id: str, payload: dict) -> dict:
         c_name = None
         if "customer_name" in payload:
             c_name = str(payload["customer_name"] or "").strip()[:120]
+            if not c_name:
+                raise ValueError("Customer name is required.")
             fields.append("customer_name=?")
             vals.append(c_name)
             if c_name:
@@ -860,7 +890,17 @@ def update_order(order_id: str, payload: dict) -> dict:
                 else:
                     raw_qty = float(line.get("qty") or line.get("entry_qty") or line.get("pcs") or 1)
                     raw_unit = str(line.get("unit") or line.get("entry_unit") or item["main_unit"] or "pcs").strip()
-                res = resolve_quantity(item, raw_qty, raw_unit)
+                item_dict = dict(item)
+                raw_rate = line.get("rate")
+                if raw_rate is not None and str(raw_rate).strip() != "":
+                    try:
+                        custom_rate = float(raw_rate)
+                        if custom_rate >= 0:
+                            item_dict["rate"] = custom_rate
+                    except (TypeError, ValueError):
+                        pass
+
+                res = resolve_quantity(item_dict, raw_qty, raw_unit)
                 narration = str(line.get("narration") or "").strip()[:200]
 
                 act_w = line.get("actual_weight")
@@ -875,8 +915,8 @@ def update_order(order_id: str, payload: dict) -> dict:
                            narration, entry_unit, entry_qty, unit, qty)
                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
-                        str(line.get("id") or uuid.uuid4()), order_id, idx, item["id"], item["name"],
-                        item["category"], res["pcs"], item["weight_per_pc"], item["rate"], act_w,
+                        str(line.get("id") or uuid.uuid4()), order_id, idx, item_dict["id"], item_dict["name"],
+                        item_dict["category"], res["pcs"], item_dict["weight_per_pc"], item_dict["rate"], act_w,
                         narration, res["entry_unit"], res["entry_qty"], res["unit"], res["qty"],
                     ),
                 )
@@ -911,6 +951,13 @@ def update_order_line(order_id: str, line_id: str, patch: dict) -> dict:
         if "narration" in patch:
             fields.append("narration=?")
             vals.append(str(patch["narration"] or "").strip()[:200])
+
+        if "rate" in patch and patch["rate"] is not None and str(patch["rate"]).strip() != "":
+            r_val = float(patch["rate"])
+            if r_val < 0:
+                raise ValueError("Rate cannot be negative.")
+            fields.append("rate=?")
+            vals.append(r_val)
 
         if "actual_weight" in patch:
             raw_act = patch["actual_weight"]

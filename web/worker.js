@@ -16,6 +16,7 @@ const S = {
   editingOrderNo: '',
   itemQuery: '',
   category: '',
+  subCategory: '',
   orders: [],
   ordersFilter: store.get('ordersFilter', 'OPEN'),
   activeOrder: null,
@@ -246,7 +247,7 @@ function cartLine(itemId) {
   return S.cart.find(l => l.item_id === itemId);
 }
 
-function calcItemEntry(item, entryQty, entryUnit) {
+function calcItemEntry(item, entryQty, entryUnit, customRate = null) {
   const rawQty = Math.max(0, Number(entryQty) || 0);
   const u = (entryUnit || item.order_unit || item.main_unit || 'pcs').toLowerCase();
   const mainU = (item.main_unit || 'kg').toLowerCase();
@@ -256,7 +257,9 @@ function calcItemEntry(item, entryQty, entryUnit) {
   const altU2Factor = Number(item.alt_unit2_factor) || 0;
   let lengthPerPc = Number(item.length_per_pc) || 0;
   let weightPerPc = Number(item.weight_per_pc) || 0;
-  const rate = Number(item.rate) || 0;
+  const rate = (customRate !== null && customRate !== undefined && !isNaN(Number(customRate)))
+    ? Number(customRate)
+    : (Number(item.rate) || 0);
 
   // Derive effective factors if not directly specified
   if (weightPerPc <= 0) {
@@ -436,7 +439,12 @@ function cartTotals() {
   for (const line of S.cart) {
     const item = itemById(line.item_id);
     if (!item) continue;
-    const calc = calcItemEntry(item, line.entry_qty !== undefined ? line.entry_qty : (line.qty || line.pcs), line.entry_unit || line.unit || 'pcs');
+    const calc = calcItemEntry(
+      item,
+      line.entry_qty !== undefined ? line.entry_qty : (line.qty || line.pcs),
+      line.entry_unit || line.unit || 'pcs',
+      line.rate
+    );
     pcs += calc.pcs;
     weight += calc.weight;
     amount += calc.amount;
@@ -444,28 +452,78 @@ function cartTotals() {
   return { lines: S.cart.length, pcs, weight, amount };
 }
 
+const SUB_TOKENS = [
+  '2B', 'PVC', 'MIRROR', 'COIL',
+  '8X4', '8X3', '8X39', '1MX2M', "1MX8'", "2MX20''", "2MX44''", '6X4', '25X3', '30X3', '40X3',
+  '12G', '14G', '16G', '18G', '20G', '22G', '24G', '26G', '27G', '28G', '29G', '2.5mm'
+];
+
+function matchSubCat(item, sub) {
+  if (!sub) return true;
+  const name = (item.name || '').toUpperCase();
+  const tok = sub.toUpperCase();
+  return name.includes(tok);
+}
+
+function getSubCategories(category) {
+  const pool = S.items.filter(i => !category || i.category === category);
+  const catUpper = (category || '').toUpperCase();
+  const found = SUB_TOKENS.filter(tok => {
+    if (tok.toUpperCase() === catUpper) return false;
+    return pool.some(it => matchSubCat(it, tok));
+  });
+  return found.length ? ['All', ...found] : [];
+}
+
+function paintSubCats() {
+  const host = $('#subCats');
+  if (!host) return;
+  const subs = getSubCategories(S.category);
+  if (!subs.length) {
+    host.innerHTML = '';
+    host.classList.add('hidden');
+    return;
+  }
+  host.classList.remove('hidden');
+  host.innerHTML = subs.map(sc => {
+    const val = sc === 'All' ? '' : sc;
+    return `<button class="chip sub-chip" data-subcat="${esc(sc)}" aria-pressed="${val === S.subCategory}">${esc(sc)}</button>`;
+  }).join('');
+}
+
 function renderPicker() {
   const cats = ['All', ...S.categories];
+  const isEditing = Boolean(S.editingOrderId);
   view.innerHTML = `
+    ${isEditing ? `
+      <div class="note-box warn" style="margin-bottom:12px;justify-content:space-between;align-items:center">
+        <span>Editing <b>${esc(S.editingOrderNo)}</b> — tap + / − to change items</span>
+        <button class="btn btn-sm" id="backToReviewBtn" type="button" style="white-space:nowrap">Review changes</button>
+      </div>` : ''}
     <div class="page-head">
-      <h1>New order</h1>
-      <p>Tap + to add. Tap the number to change it.</p>
+      <h1>${isEditing ? `Edit ${esc(S.editingOrderNo)}` : 'New order'}</h1>
+      <p>Tap + to add. Tap the item name for units or rate.</p>
     </div>
 
-    <div class="searchbar" style="margin-bottom:12px">
+    <div class="searchbar" style="margin-bottom:10px">
       ${icon('search')}
       <input id="q" type="search" placeholder="Search item, e.g. 202 20G" value="${esc(S.itemQuery)}"
              autocomplete="off" enterkeyhint="search">
       <button class="icon-btn ${S.itemQuery ? '' : 'hidden'}" id="clearQ" aria-label="Clear search">${icon('close', 'i i-sm')}</button>
     </div>
 
-    <div class="chips" style="margin-bottom:12px" id="cats">
+    <div class="chips" style="margin-bottom:8px" id="cats">
       ${cats.map(c => `<button class="chip" data-cat="${esc(c)}" aria-pressed="${(c === 'All' ? '' : c) === S.category || (c === 'All' && !S.category)}">${esc(c)}</button>`).join('')}
     </div>
+    <div class="chips sub-chips" style="margin-bottom:12px" id="subCats"></div>
 
     <div id="grid"></div>
     <div class="grid-note" id="gridNote"></div>
   `;
+
+  if (isEditing && $('#backToReviewBtn')) {
+    $('#backToReviewBtn').addEventListener('click', () => go('#/review'));
+  }
 
   const input = $('#q');
   input.addEventListener('input', debounce(e => {
@@ -486,11 +544,23 @@ function renderPicker() {
     if (!btn) return;
     const cat = btn.dataset.cat;
     S.category = cat === 'All' ? '' : cat;
+    S.subCategory = '';
     $$('#cats .chip').forEach(c => c.setAttribute('aria-pressed',
       String((c.dataset.cat === 'All' ? '' : c.dataset.cat) === S.category)));
+    paintSubCats();
     paintGrid();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+  $('#subCats').addEventListener('click', e => {
+    const btn = e.target.closest('[data-subcat]');
+    if (!btn) return;
+    const sc = btn.dataset.subcat;
+    S.subCategory = sc === 'All' ? '' : sc;
+    $$('#subCats .chip').forEach(c => c.setAttribute('aria-pressed',
+      String((c.dataset.subcat === 'All' ? '' : c.dataset.subcat) === S.subCategory)));
+    paintGrid();
+  });
+  paintSubCats();
 
   const grid = $('#grid');
   grid.addEventListener('click', e => {
@@ -541,7 +611,11 @@ function paintGrid() {
   const host = $('#grid');
   if (!host) return;
   const q = S.itemQuery;
-  const filtered = S.items.filter(i => (!S.category || i.category === S.category) && matchItem(i, q));
+  const filtered = S.items.filter(i =>
+    (!S.category || i.category === S.category) &&
+    (!S.subCategory || matchSubCat(i, S.subCategory)) &&
+    matchItem(i, q)
+  );
 
   if (!filtered.length) {
     host.innerHTML = `<div class="empty" style="padding:32px 0">
@@ -552,7 +626,7 @@ function paintGrid() {
     return;
   }
 
-  if (!q && !S.category) {
+  if (!q && !S.category && !S.subCategory) {
     const groups = new Map();
     for (const it of filtered) {
       const key = it.category || 'Other';
@@ -705,10 +779,11 @@ function openQtySheet(itemId, existingLine = null) {
   if (!units.includes(currentUnit)) currentUnit = units[0];
 
   let rawQty = existing ? (existing.entry_qty !== undefined ? existing.entry_qty : (existing.qty || existing.pcs)) : 1;
+  let customRate = (existing && existing.rate !== undefined && existing.rate !== null) ? Number(existing.rate) : Number(item.rate || 0);
   let narration = existing ? (existing.narration || '') : '';
 
   const renderCalc = () => {
-    const calc = calcItemEntry(item, rawQty, currentUnit);
+    const calc = calcItemEntry(item, rawQty, currentUnit, customRate);
     return `
       <div>
         <div class="k">Est. weight</div>
@@ -721,7 +796,7 @@ function openQtySheet(itemId, existingLine = null) {
       ${calc.preview ? `<div style="grid-column:1/-1;font-size:13px;color:#1d4ed8;margin-top:6px;font-weight:600">Calculated: ${esc(calc.preview)}</div>` : ''}`;
   };
 
-  const subParts = [`${money(item.rate)} / ${item.main_unit || 'kg'}`];
+  const subParts = [`${money(customRate)} / ${item.main_unit || 'kg'}`];
   if (item.alt_unit && item.alt_factor) subParts.push(`1 ${item.alt_unit} = ${item.alt_factor} ${item.main_unit || 'kg'}`);
   if (item.alt_unit2 && item.alt_unit2_factor) subParts.push(`1 ${item.alt_unit2} = ${item.alt_unit2_factor} ${item.main_unit || 'kg'}`);
   if (item.weight_per_pc > 0 && !item.alt_unit2_factor && item.alt_unit !== 'pcs') subParts.push(`${kg(item.weight_per_pc, 2)} / pc`);
@@ -747,6 +822,13 @@ function openQtySheet(itemId, existingLine = null) {
         ${[1, 5, 10, 20, 25, 50].map(n => `<button type="button" data-set="${n}">${n}</button>`).join('')}
       </div>
 
+      <div class="label" style="margin-top:12px">Rate (₹ / ${esc(item.main_unit || 'kg')})</div>
+      <div class="stepper">
+        <button type="button" data-rstep="-1" aria-label="Decrease rate">−</button>
+        <input id="rateInput" inputmode="decimal" value="${customRate}" aria-label="Rate">
+        <button type="button" data-rstep="1" aria-label="Increase rate">+</button>
+      </div>
+
       <div class="field" style="margin-top:12px;margin-bottom:10px">
         <label for="itemNarration">Item narration / note (optional)</label>
         <input class="input" id="itemNarration" placeholder="e.g. half sheet, cut 4ft, bend at 90°" value="${esc(narration)}">
@@ -759,10 +841,12 @@ function openQtySheet(itemId, existingLine = null) {
   });
 
   const input = $('#qtyInput', sheet);
+  const rateInp = $('#rateInput', sheet);
   const narrInp = $('#itemNarration', sheet);
 
   const update = () => {
     input.value = rawQty;
+    rateInp.value = customRate;
     $('#qtyLabel', sheet).textContent = `Quantity (${currentUnit})`;
     $('#estBox', sheet).innerHTML = renderCalc();
     $('#addBtn', sheet).textContent = existing ? 'Update item' : 'Add to order';
@@ -783,6 +867,12 @@ function openQtySheet(itemId, existingLine = null) {
       update();
       return;
     }
+    const rstep = e.target.closest('[data-rstep]');
+    if (rstep) {
+      customRate = Math.max(0, Math.round((customRate + Number(rstep.dataset.rstep)) * 100) / 100);
+      update();
+      return;
+    }
     const set = e.target.closest('[data-set]');
     if (set) {
       rawQty = Number(set.dataset.set);
@@ -798,13 +888,21 @@ function openQtySheet(itemId, existingLine = null) {
   });
   input.addEventListener('blur', update);
 
+  rateInp.addEventListener('input', () => {
+    const v = parseFloat(rateInp.value);
+    customRate = !isNaN(v) && v >= 0 ? v : 0;
+    const estBox = $('#estBox', sheet);
+    if (estBox) estBox.innerHTML = renderCalc();
+  });
+  rateInp.addEventListener('blur', update);
+
   narrInp.addEventListener('input', e => {
     narration = e.target.value;
   });
 
   $('#addBtn', sheet).addEventListener('click', () => {
     rawQty = Math.max(0.01, rawQty || 1);
-    const calc = calcItemEntry(item, rawQty, currentUnit);
+    const calc = calcItemEntry(item, rawQty, currentUnit, customRate);
     const lineData = {
       item_id: itemId,
       pcs: calc.pcs,
@@ -812,6 +910,7 @@ function openQtySheet(itemId, existingLine = null) {
       unit: calc.effectiveUnit,
       entry_qty: calc.rawQty,
       entry_unit: calc.entryUnit,
+      rate: customRate,
       narration: (narration || '').trim(),
       actual_weight: existing ? existing.actual_weight : null,
     };
@@ -861,7 +960,7 @@ function paintCartFoot() {
         <b class="tabular">${money(t.amount)}</b>
         <span>${t.pcs} pcs · ${kg(t.weight, 1)} est.</span>
       </div>
-      <button class="btn btn-primary" id="reviewBtn">Review ${icon('arrowRight', 'i i-sm')}</button>
+      <button class="btn btn-primary" id="reviewBtn">${S.editingOrderId ? 'Review changes' : 'Review'} ${icon('arrowRight', 'i i-sm')}</button>
     </div>`;
   $('#reviewBtn').addEventListener('click', () => go('#/review'));
 }
@@ -886,48 +985,69 @@ function renderReview() {
   const isEditing = Boolean(S.editingOrderId);
 
   view.innerHTML = `
-    <button class="back" id="backBtn">
-      ${icon('chevron-left', 'i i-sm')} ${isEditing ? 'Cancel editing' : 'Add more items'}
-    </button>
-    <div class="page-head" style="margin-bottom:16px">
-      <h1>${isEditing ? `Edit ${esc(S.editingOrderNo || 'order')}` : 'Check the order'}</h1>
-      <p>Tap a number to change it. Tap the bin to remove one item.</p>
-    </div>
-
-    ${isEditing ? `
-      <div class="note-box warn" style="margin-bottom:14px">
-        ${icon('edit', 'i i-sm')}
-        <span>Editing order <b>${esc(S.editingOrderNo)}</b>. Changes update the existing order.</span>
-      </div>` : ''}
-
-    <div class="section">
-      <div class="section-title">Customer</div>
-      <button class="pick-field" id="customerBtn">
-        ${icon('user')}
-        <span class="pf-main">
-          <span class="pf-value ${S.customerName ? '' : 'pf-placeholder'}">${esc(S.customerName || 'Choose or type a name')}</span>
-        </span>
-        ${icon('chevron-right', 'i i-sm')}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+      <button class="back" id="backBtn" style="margin:0">
+        ${icon('chevron-left', 'i i-sm')} Add / edit items
       </button>
+      ${isEditing ? `<button class="btn btn-sm btn-ghost" id="cancelEditBtn" type="button" style="color:var(--red)">Cancel edit</button>` : ''}
+    </div>
+
+    <div class="page-head" style="margin-bottom:14px">
+      <h1>${isEditing ? `Edit ${esc(S.editingOrderNo || 'order')}` : 'Review order'}</h1>
     </div>
 
     <div class="section">
-      <div class="section-title">Items</div>
-      <div class="line-list" id="lines">
+      <div class="section-title">Customer name <span style="color:var(--red)">*</span></div>
+      <div class="cust-combo">
+        <div class="searchbar cust-bar">
+          ${icon('user')}
+          <input id="custInput" type="text" placeholder="Type customer name..." value="${esc(S.customerName)}" autocomplete="off">
+          <button type="button" class="icon-btn ${S.customerName ? '' : 'hidden'}" id="clearCust" aria-label="Clear">${icon('close', 'i i-sm')}</button>
+        </div>
+        <div class="cust-drop hidden" id="custDrop"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Items (${S.cart.length})</div>
+      <div class="rev-list" id="lines">
         ${S.cart.map((line, idx) => {
           const item = itemById(line.item_id);
           if (!item) return '';
-          return `<div class="line-row rev-row" data-line="${idx}">
-                      <span class="line-main">
-                        <span class="line-name">${esc(item.name)}</span>
-                        <span class="line-sub">${money(item.rate)}/${esc(item.main_unit || 'kg')}${item.weight_per_pc > 0 ? ' · ' + kg(item.weight_per_pc, 2) + '/pc' : ''}</span>
-                        ${line.narration ? `<span class="rev-note">${esc(line.narration)}</span>` : ''}
-                      </span>
-            <span class="rev-qty">
-              <input data-rqty="${idx}" inputmode="decimal" value="${line.entry_qty !== undefined ? line.entry_qty : line.pcs}" aria-label="Quantity for ${esc(item.name)}">
-              <span class="rev-unit">${esc(line.entry_unit || line.unit || item.order_unit || item.main_unit || 'kg')}</span>
-            </span>
-            <button type="button" class="rev-del" data-del="${idx}" aria-label="Remove ${esc(item.name)}">${icon('trash', 'i i-sm')}</button>
+          const qtyVal = line.entry_qty !== undefined ? line.entry_qty : line.pcs;
+          const unitVal = line.entry_unit || line.unit || item.order_unit || item.main_unit || 'kg';
+          const rateVal = (line.rate !== undefined && line.rate !== null) ? Number(line.rate) : Number(item.rate || 0);
+          const calc = calcItemEntry(item, qtyVal, unitVal, rateVal);
+          return `<div class="rev-card" data-line="${idx}">
+            <div class="rev-card-top">
+              <div class="rev-card-title">
+                <span class="rev-name">${esc(item.name)}</span>
+                ${line.narration ? `<span class="rev-note">${esc(line.narration)}</span>` : ''}
+              </div>
+              <button type="button" class="rev-del" data-del="${idx}" aria-label="Remove ${esc(item.name)}">${icon('trash', 'i i-sm')}</button>
+            </div>
+            <div class="rev-ctrl-row">
+              <div class="rev-ctrl">
+                <span class="rev-lbl">Qty (${esc(unitVal)})</span>
+                <div class="mini-step">
+                  <button type="button" data-qstep="${idx}" data-delta="-1" aria-label="Decrease">−</button>
+                  <input data-rqty="${idx}" inputmode="decimal" value="${qtyVal}" aria-label="Quantity">
+                  <button type="button" data-qstep="${idx}" data-delta="1" aria-label="Increase">+</button>
+                </div>
+              </div>
+              <div class="rev-ctrl">
+                <span class="rev-lbl">Rate (₹)</span>
+                <div class="mini-step">
+                  <button type="button" data-rstep="${idx}" data-delta="-1" aria-label="Decrease rate">−</button>
+                  <input data-rrate="${idx}" inputmode="decimal" value="${rateVal}" aria-label="Rate">
+                  <button type="button" data-rstep="${idx}" data-delta="1" aria-label="Increase rate">+</button>
+                </div>
+              </div>
+            </div>
+            <div class="rev-card-foot">
+              <span>${kg(calc.weight, 1)} est.</span>
+              <b>${money(calc.amount)}</b>
+            </div>
           </div>`;
         }).join('')}
       </div>
@@ -936,90 +1056,176 @@ function renderReview() {
     <div class="section">
       <div class="section-title">Taken by</div>
       <div class="field">
-        <input class="input" id="worker" placeholder="Your name" value="${esc(S.worker)}" autocomplete="name">
+        <input class="input" id="worker" placeholder="Your name" value="${esc(S.worker)}" autocomplete="name" style="font-size:16px">
       </div>
       <div style="height:10px"></div>
       <div class="field">
-        <label for="note">Order note (optional)</label>
-        <input class="input" id="note" placeholder="Vehicle no., delivery detail..." value="${esc(S.note || '')}">
+        <input class="input" id="note" placeholder="Order note (optional)" value="${esc(S.note || '')}" style="font-size:16px">
       </div>
     </div>
 
     <div class="total-box">
       <div class="tb-row tb-main">
-        <span class="tb-k">Estimated amount</span>
+        <span class="tb-k">Estimated total</span>
         <span class="tb-v">${money(t.amount)}</span>
       </div>
       <div class="tb-row">
-        <span class="tb-k">${t.pcs} pieces · ${t.lines} item${t.lines === 1 ? '' : 's'}</span>
+        <span class="tb-k">${t.pcs} pcs · ${t.lines} item${t.lines === 1 ? '' : 's'}</span>
         <span class="tb-v">${kg(t.weight, 1)}</span>
       </div>
-      <div class="tiny" style="color:#9fb6d0;line-height:1.4">This is an estimate from the recorded weight and units. The final amount uses the actual scale weight.</div>
     </div>
     <div style="height:14px"></div>
   `;
 
-  $('#backBtn').addEventListener('click', () => {
-    if (isEditing) {
+  $('#backBtn').addEventListener('click', () => go('#/'));
+  if (isEditing && $('#cancelEditBtn')) {
+    $('#cancelEditBtn').addEventListener('click', () => {
       const orderId = S.editingOrderId;
       S.editingOrderId = null;
       S.editingOrderNo = '';
       S.cart = [];
       persistCart();
       go('#/order/' + orderId);
-    } else {
-      go('#/');
-    }
-  });
+    });
+  }
+
   $('#note').addEventListener('input', e => { S.note = e.target.value.trim(); });
   $('#worker').addEventListener('input', e => {
     S.worker = e.target.value.trim();
     store.set('worker', S.worker);
   });
-  $('#customerBtn').addEventListener('click', openCustomerSheet);
 
-  $('#lines').addEventListener('click', e => {
-    const del = e.target.closest('[data-del]');
-    if (!del) return;
-    const idx = Number(del.dataset.del);
-    const line = S.cart[idx];
-    if (!line) return;
-    const item = itemById(line.item_id);
-    S.cart.splice(idx, 1);
-    persistCart();
-    toast(`${item ? item.name : 'Item'} removed`, 'default');
-    renderReview();
+  // Direct typable customer name bar with live suggestions (no Walk-in option)
+  const custInp = $('#custInput');
+  const custDrop = $('#custDrop');
+  const clearCust = $('#clearCust');
+  let custStamp = 0;
+
+  const showCustMatches = async (val) => {
+    const q = (val || '').trim();
+    const stamp = ++custStamp;
+    try {
+      const data = await api('/api/customers?q=' + encodeURIComponent(q));
+      if (stamp !== custStamp) return;
+      const list = data.customers || [];
+      if (!list.length) {
+        custDrop.classList.add('hidden');
+        custDrop.innerHTML = '';
+        return;
+      }
+      custDrop.innerHTML = list.slice(0, 12).map(c => `
+        <button type="button" class="cust-opt" data-pick="${esc(c.name)}" data-phone="${esc(c.phone || '')}">
+          <span class="co-name">${esc(c.name)}</span>
+          ${c.phone ? `<span class="co-phone">${esc(c.phone)}</span>` : ''}
+        </button>`).join('');
+      custDrop.classList.remove('hidden');
+    } catch (err) {
+      custDrop.classList.add('hidden');
+    }
+  };
+
+  custInp.addEventListener('input', debounce(e => {
+    S.customerName = e.target.value;
+    clearCust.classList.toggle('hidden', !S.customerName.trim());
+    showCustMatches(e.target.value);
+  }, 140));
+  custInp.addEventListener('focus', () => showCustMatches(custInp.value));
+  clearCust.addEventListener('click', () => {
+    S.customerName = '';
+    S.customerPhone = '';
+    custInp.value = '';
+    clearCust.classList.add('hidden');
+    showCustMatches('');
+    custInp.focus();
   });
-  $('#lines').addEventListener('focusin', e => {
-    if (e.target.matches('[data-rqty]')) e.target.select();
+  custDrop.addEventListener('click', e => {
+    const opt = e.target.closest('[data-pick]');
+    if (!opt) return;
+    S.customerName = opt.dataset.pick || '';
+    if (opt.dataset.phone) S.customerPhone = opt.dataset.phone;
+    custInp.value = S.customerName;
+    clearCust.classList.toggle('hidden', !S.customerName.trim());
+    custDrop.classList.add('hidden');
   });
-  $('#lines').addEventListener('change', e => {
-    const inp = e.target.closest('[data-rqty]');
-    if (!inp) return;
-    const idx = Number(inp.dataset.rqty);
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.cust-combo') && custDrop) custDrop.classList.add('hidden');
+  }, { once: false });
+
+  const updateLineQty = (idx, val) => {
     const line = S.cart[idx];
     if (!line) return;
     const item = itemById(line.item_id);
     if (!item) return;
-    const val = Math.round((Number(inp.value) || 0) * 1000) / 1000;
-    if (val <= 0) {
+    const next = Math.round((Number(val) || 0) * 1000) / 1000;
+    if (next <= 0) {
       S.cart.splice(idx, 1);
       persistCart();
       renderReview();
       return;
     }
     const unit = line.entry_unit || line.unit || item.order_unit || item.main_unit || 'kg';
-    const calc = calcItemEntry(item, val, unit);
-    line.entry_qty = val;
+    const calc = calcItemEntry(item, next, unit, line.rate);
+    line.entry_qty = next;
     line.entry_unit = calc.entryUnit;
     line.qty = calc.effectiveQty;
     line.unit = calc.effectiveUnit;
     line.pcs = calc.pcs;
     persistCart();
     renderReview();
+  };
+
+  const updateLineRate = (idx, val) => {
+    const line = S.cart[idx];
+    if (!line) return;
+    const nextRate = Math.max(0, Math.round((Number(val) || 0) * 100) / 100);
+    line.rate = nextRate;
+    persistCart();
+    renderReview();
+  };
+
+  $('#lines').addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      const idx = Number(del.dataset.del);
+      const line = S.cart[idx];
+      if (!line) return;
+      const item = itemById(line.item_id);
+      S.cart.splice(idx, 1);
+      persistCart();
+      toast(`${item ? item.name : 'Item'} removed`, 'default');
+      renderReview();
+      return;
+    }
+    const qstep = e.target.closest('[data-qstep]');
+    if (qstep) {
+      const idx = Number(qstep.dataset.qstep);
+      const line = S.cart[idx];
+      if (!line) return;
+      const cur = Number(line.entry_qty !== undefined ? line.entry_qty : line.pcs) || 0;
+      updateLineQty(idx, cur + Number(qstep.dataset.delta));
+      return;
+    }
+    const rstep = e.target.closest('[data-rstep]');
+    if (rstep) {
+      const idx = Number(rstep.dataset.rstep);
+      const line = S.cart[idx];
+      if (!line) return;
+      const item = itemById(line.item_id);
+      const curRate = (line.rate !== undefined && line.rate !== null) ? Number(line.rate) : Number((item && item.rate) || 0);
+      updateLineRate(idx, curRate + Number(rstep.dataset.delta));
+    }
+  });
+  $('#lines').addEventListener('focusin', e => {
+    if (e.target.matches('[data-rqty], [data-rrate]')) e.target.select();
+  });
+  $('#lines').addEventListener('change', e => {
+    const qinp = e.target.closest('[data-rqty]');
+    if (qinp) { updateLineQty(Number(qinp.dataset.rqty), qinp.value); return; }
+    const rinp = e.target.closest('[data-rrate]');
+    if (rinp) { updateLineRate(Number(rinp.dataset.rrate), rinp.value); }
   });
   $('#lines').addEventListener('keydown', e => {
-    if (e.target.matches('[data-rqty]') && e.key === 'Enter') e.target.blur();
+    if (e.target.matches('[data-rqty], [data-rrate]') && e.key === 'Enter') e.target.blur();
   });
 
   foot.innerHTML = `
@@ -1035,8 +1241,8 @@ function renderReview() {
         </div>
       </div>
       <div class="row" style="gap:9px">
-        <button class="btn btn-lg" id="shareEstBtn" style="flex:0 0 auto;background:#fff;border:1px solid #cbd5e1;color:#1b3554">
-          ${icon('share', 'i i-sm')} Send estimate
+        <button class="btn btn-lg" id="shareEstBtn" style="flex:0 0 auto;background:#fff;border:1px solid #cbd5e1;color:var(--navy)">
+          ${icon('share', 'i i-sm')} Estimate
         </button>
         <button class="btn btn-success btn-lg" id="saveBtn" style="flex:1">${isEditing ? 'Save changes' : 'Save order'}</button>
       </div>
@@ -1052,81 +1258,18 @@ function renderReview() {
   });
 }
 
-function openCustomerSheet() {
-  let typing = '';
-  const body = `
-    <div class="searchbar" style="margin-bottom:12px">
-      ${icon('search')}
-      <input id="cq" placeholder="Search customer name or phone" autocomplete="off" enterkeyhint="search">
-    </div>
-    <div id="cList" class="line-list"></div>`;
-  const { sheet, close } = openSheet({
-    title: 'Who is this order for?',
-    sub: 'Optional — leave it blank for a walk-in.',
-    body,
-    onMount: mount,
-  });
-
-  function mount(node) {
-    const input = $('#cq', node);
-    const list = $('#cList', node);
-    let last = 0;
-
-    const rows = (items, typed) => {
-      const typedRow = typed
-        ? `<button class="line-row" data-pick="${esc(typed)}" style="border-color:#1b3554">
-             ${icon('plusCircle')}
-             <span class="line-main"><span class="line-name">Use “${esc(typed)}”</span>
-             <span class="line-sub">New customer name</span></span>
-             ${icon('chevron-right', 'i i-sm')}
-           </button>`
-        : '';
-      const noRow = `<button class="line-row" data-pick="">
-          ${icon('user')}
-          <span class="line-main"><span class="line-name">Walk-in (no name)</span></span>
-        </button>`;
-      return typedRow + noRow + items.map(c => `
-        <button class="line-row" data-pick="${esc(c.name)}" data-phone="${esc(c.phone || '')}">
-          ${icon('user')}
-          <span class="line-main">
-            <span class="line-name">${esc(c.name)}</span>
-            ${c.phone || c.gstin ? `<span class="line-sub">${esc([c.phone, c.gstin].filter(Boolean).join(' · '))}</span>` : ''}
-          </span>
-        </button>`).join('');
-    };
-
-    const search = async (value) => {
-      typing = value;
-      list.innerHTML = rows([], typing);
-      if (!value) { list.innerHTML = rows([], ''); return; }
-      const stamp = ++last;
-      try {
-        const data = await api('/api/customers?q=' + encodeURIComponent(value));
-        if (stamp !== last) return;
-        list.innerHTML = rows(data.customers, typing);
-      } catch (err) { /* keep the typed row */ }
-    };
-
-    list.addEventListener('click', e => {
-      const pick = e.target.closest('[data-pick]');
-      if (!pick) return;
-      S.customerName = pick.dataset.pick || '';
-      S.customerPhone = pick.dataset.phone || S.customerPhone || '';
-      close();
-      renderReview();
-    });
-
-    input.addEventListener('input', debounce(e => search(e.target.value.trim()), 180));
-    search('');
-  }
-}
-
 async function saveOrder() {
   if (S.busy) return;
   const t = cartTotals();
   if (!t.lines) return;
+  if (!S.customerName.trim()) {
+    toast('Enter customer name first', 'error');
+    const c = $('#custInput');
+    if (c) { c.focus(); c.scrollIntoView({ block: 'center' }); }
+    return;
+  }
   if (!S.worker.trim()) {
-    toast('Type your name in “Taken by” first');
+    toast('Type your name in “Taken by” first', 'error');
     const w = $('#worker');
     if (w) { w.focus(); w.scrollIntoView({ block: 'center' }); }
     return;
@@ -1142,6 +1285,7 @@ async function saveOrder() {
     unit: l.unit || 'pcs',
     entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
     entry_unit: l.entry_unit || l.unit || 'pcs',
+    rate: (l.rate !== undefined && l.rate !== null) ? Number(l.rate) : undefined,
     narration: l.narration || '',
     actual_weight: l.actual_weight !== undefined ? l.actual_weight : null,
   }));
@@ -1506,6 +1650,7 @@ function startEditingOrder(order) {
     unit: l.unit,
     entry_qty: l.entry_qty !== undefined ? l.entry_qty : (l.qty || l.pcs),
     entry_unit: l.entry_unit || l.unit || 'pcs',
+    rate: l.rate,
     narration: l.narration || '',
     actual_weight: l.actual_weight,
   }));
