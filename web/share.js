@@ -73,10 +73,13 @@ function estimateFromOrder(order) {
     const weighed = hasLineAct || (singleLine && orderAct > 0) || (order.status === 'WEIGHED' && l.actual_weight !== null);
     const weight = hasLineAct ? Number(l.actual_weight) : ((singleLine && orderAct > 0) ? orderAct : (l.actual_weight !== null && l.actual_weight !== undefined ? Number(l.actual_weight) : (l.est_weight != null ? Number(l.est_weight) : 0)));
     const amount = weighed ? (weight * (l.rate || 0)) : (l.est_amount || (weight * (l.rate || 0)));
+    const realWpp = (weighed && l.pcs > 0 && weight > 0)
+      ? (weight / l.pcs)
+      : (l.weight_per_pc || (l.pcs > 0 && weight > 0 ? weight / l.pcs : 0));
     return {
       name: l.name,
       pcs: l.pcs,
-      weight_per_pc: l.weight_per_pc || 0,
+      weight_per_pc: realWpp,
       weight,
       rate: l.rate || 0,
       amount,

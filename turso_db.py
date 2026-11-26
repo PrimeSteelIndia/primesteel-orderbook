@@ -1,13 +1,49 @@
-"""Zero-dependency Turso (libSQL) HTTP /v2/pipeline driver compatible with sqlite3.Row usage."""
+"""Zero-dependency Turso (libSQL) HTTP /v2/pipeline driver compatible with sqlite3.Row usage.
+
+Uses per-thread persistent HTTPS keep-alive connections and pipelines PRAGMA + close
+in a single HTTP roundtrip to keep cloud queries fast.
+"""
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import math
 import sqlite3
-import urllib.error
-import urllib.request
+import ssl
+import threading
 from typing import Any
+from urllib.parse import urlparse
+
+
+_TLS_LOCAL = threading.local()
+_SSL_CTX = ssl.create_default_context()
+
+
+def _get_https_conn(host: str, port: int | None, timeout: float) -> http.client.HTTPSConnection:
+    cache = getattr(_TLS_LOCAL, "conns", None)
+    if cache is None:
+        cache = {}
+        _TLS_LOCAL.conns = cache
+    key = (host, port or 443)
+    conn = cache.get(key)
+    if conn is None:
+        conn = http.client.HTTPSConnection(host, port or 443, timeout=timeout, context=_SSL_CTX)
+        cache[key] = conn
+    return conn
+
+
+def _reset_https_conn(host: str, port: int | None) -> None:
+    cache = getattr(_TLS_LOCAL, "conns", None)
+    if not cache:
+        return
+    key = (host, port or 443)
+    conn = cache.pop(key, None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _encode_arg(val: Any) -> dict:
@@ -92,47 +128,63 @@ class TursoCursor:
 
 
 class TursoConn:
-    """sqlite3-compatible connection backed by Turso HTTP /v2/pipeline."""
+    """sqlite3-compatible connection backed by Turso HTTP /v2/pipeline with keep-alive."""
 
     def __init__(self, base_url: str, auth_token: str, timeout: float = 20.0):
         url = base_url.strip().rstrip("/")
         if url.startswith("libsql://"):
             url = "https://" + url[len("libsql://"):]
-        self.pipeline_url = url + "/v2/pipeline"
+        parsed = urlparse(url)
+        self.host = parsed.hostname or ""
+        self.port = parsed.port
+        self.pipeline_path = (parsed.path.rstrip("/") or "") + "/v2/pipeline"
         self.auth_token = auth_token.strip()
         self.timeout = timeout
         self.baton: str | None = None
         self.in_tx: bool = False
+        self._pending_pragmas: list[str] = []
         self.row_factory = sqlite3.Row
 
     def _post(self, requests_list: list[dict]) -> dict:
         payload: dict[str, Any] = {"requests": requests_list}
         if self.baton:
             payload["baton"] = self.baton
-        req = urllib.request.Request(
-            self.pipeline_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.auth_token}",
-                "Content-Type": "application/json",
-                "User-Agent": "PrimeSteel-Turso/1.0",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            err_body = exc.read().decode("utf-8", errors="replace")
-            if "baton" in err_body.lower() and self.baton:
-                self.baton = None
-            raise sqlite3.OperationalError(f"Turso HTTP {exc.code}: {err_body[:300]}") from exc
-        except Exception as exc:
-            raise sqlite3.OperationalError(f"Turso connection error: {exc}") from exc
+        body_bytes = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {self.auth_token}",
+            "Content-Type": "application/json",
+            "Connection": "keep-alive",
+            "User-Agent": "PrimeSteel-Turso/1.1",
+        }
 
-        if "baton" in data:
-            self.baton = data["baton"]
-        return data
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            conn = _get_https_conn(self.host, self.port, self.timeout)
+            try:
+                conn.request("POST", self.pipeline_path, body=body_bytes, headers=headers)
+                resp = conn.getresponse()
+                raw = resp.read()
+                if resp.status >= 400:
+                    err_body = raw.decode("utf-8", errors="replace")
+                    if "baton" in err_body.lower() and self.baton:
+                        self.baton = None
+                    raise sqlite3.OperationalError(f"Turso HTTP {resp.status}: {err_body[:300]}")
+                data = json.loads(raw.decode("utf-8"))
+                if "baton" in data:
+                    self.baton = data["baton"]
+                return data
+            except sqlite3.OperationalError:
+                raise
+            except (http.client.HTTPException, OSError, TimeoutError) as exc:
+                last_exc = exc
+                _reset_https_conn(self.host, self.port)
+                if attempt == 0 and not self.baton:
+                    continue
+                raise sqlite3.OperationalError(f"Turso connection error: {exc}") from exc
+            except Exception as exc:
+                _reset_https_conn(self.host, self.port)
+                raise sqlite3.OperationalError(f"Turso connection error: {exc}") from exc
+        raise sqlite3.OperationalError(f"Turso connection error: {last_exc}")
 
     def _raise_for_result(self, res: dict) -> dict:
         if res.get("type") == "error":
@@ -147,21 +199,45 @@ class TursoConn:
     def execute(self, sql: str, params: tuple | list = ()) -> TursoCursor:
         clean_sql = sql.strip()
         upper = clean_sql.upper()
+
+        # Defer standalone PRAGMA foreign_keys = ON so it rides free with the next query
+        if upper.startswith("PRAGMA FOREIGN_KEYS"):
+            self._pending_pragmas.append(clean_sql)
+            return TursoCursor([])
+
         if upper.startswith("BEGIN IMMEDIATE") or upper.startswith("BEGIN EXCLUSIVE"):
             clean_sql = "BEGIN"
             upper = "BEGIN"
         if upper == "BEGIN":
             self.in_tx = True
 
+        reqs: list[dict] = []
+        if self._pending_pragmas:
+            for p_sql in self._pending_pragmas:
+                reqs.append({"type": "execute", "stmt": {"sql": p_sql}})
+            self._pending_pragmas.clear()
+
         stmt: dict[str, Any] = {"sql": clean_sql}
         if params:
             stmt["args"] = [_encode_arg(p) for p in params]
+        main_idx = len(reqs)
+        reqs.append({"type": "execute", "stmt": stmt})
 
-        data = self._post([{"type": "execute", "stmt": stmt}])
+        # Single-shot queries outside a transaction close in the same HTTP call
+        if not self.in_tx and not self.baton:
+            reqs.append({"type": "close"})
+
+        data = self._post(reqs)
+        if not self.in_tx and reqs[-1].get("type") == "close":
+            self.baton = None
+
         results = data.get("results") or []
-        if not results:
+        if len(results) <= main_idx:
             return TursoCursor([])
-        res = self._raise_for_result(results[0])
+        for i, r in enumerate(results):
+            if r.get("type") == "error":
+                self._raise_for_result(r)
+        res = self._raise_for_result(results[main_idx])
         cols = [c.get("name", f"col{i}") for i, c in enumerate(res.get("cols") or [])]
         raw_rows = res.get("rows") or []
         rows = [TursoRow(cols, [_decode_cell(cell) for cell in r]) for r in raw_rows]
@@ -175,7 +251,6 @@ class TursoConn:
         return TursoCursor(rows, lastrowid=lastrowid, rowcount=rowcount)
 
     def executescript(self, script: str) -> None:
-        # Strip -- line comments and split on ;
         lines = []
         for line in script.splitlines():
             stripped = line.strip()
@@ -197,22 +272,31 @@ class TursoConn:
     def commit(self) -> None:
         if self.in_tx and self.baton:
             try:
-                data = self._post([{"type": "execute", "stmt": {"sql": "COMMIT"}}])
+                data = self._post([
+                    {"type": "execute", "stmt": {"sql": "COMMIT"}},
+                    {"type": "close"},
+                ])
                 for r in data.get("results") or []:
                     self._raise_for_result(r)
             finally:
                 self.in_tx = False
+                self.baton = None
 
     def rollback(self) -> None:
         if self.in_tx and self.baton:
             try:
-                self._post([{"type": "execute", "stmt": {"sql": "ROLLBACK"}}])
+                self._post([
+                    {"type": "execute", "stmt": {"sql": "ROLLBACK"}},
+                    {"type": "close"},
+                ])
             except Exception:
                 pass
             finally:
                 self.in_tx = False
+                self.baton = None
 
     def close(self) -> None:
+        self._pending_pragmas.clear()
         if self.baton:
             try:
                 self._post([{"type": "close"}])

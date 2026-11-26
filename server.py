@@ -1694,27 +1694,30 @@ def stats() -> dict:
     start_ms = int(start.timestamp() * 1000)
     conn = db()
     try:
-        to_weigh = conn.execute("SELECT COUNT(*) c FROM orders WHERE status='OPEN'").fetchone()["c"]
-        today = conn.execute("SELECT COUNT(*) c FROM orders WHERE created_at>=?", (start_ms,)).fetchone()["c"]
-        weighed_today = conn.execute(
-            "SELECT COUNT(*) c, COALESCE(SUM(actual_amount),0) v FROM orders WHERE status='WEIGHED' AND weighed_at>=?",
-            (start_ms,),
+        o_row = conn.execute(
+            """SELECT
+                 COALESCE(SUM(CASE WHEN status='OPEN' THEN 1 ELSE 0 END), 0) AS to_weigh,
+                 COALESCE(SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END), 0) AS today_orders,
+                 COALESCE(SUM(CASE WHEN status='WEIGHED' AND weighed_at>=? THEN 1 ELSE 0 END), 0) AS weighed_today,
+                 COALESCE(SUM(CASE WHEN status='WEIGHED' AND weighed_at>=? THEN actual_amount ELSE 0 END), 0) AS value_today,
+                 COALESCE(SUM(CASE WHEN status='OPEN' THEN est_amount ELSE 0 END), 0) AS pending_estimate
+               FROM orders""",
+            (start_ms, start_ms, start_ms),
         ).fetchone()
-        no_weight = conn.execute(
-            "SELECT COUNT(*) c FROM items WHERE active=1 AND weight_per_pc<=0"
-        ).fetchone()["c"]
-        items = conn.execute("SELECT COUNT(*) c FROM items WHERE active=1").fetchone()["c"]
-        pending_amount = conn.execute(
-            "SELECT COALESCE(SUM(est_amount),0) v FROM orders WHERE status='OPEN'"
-        ).fetchone()["v"]
+        i_row = conn.execute(
+            """SELECT
+                 COUNT(*) AS items,
+                 COALESCE(SUM(CASE WHEN weight_per_pc<=0 THEN 1 ELSE 0 END), 0) AS no_weight
+               FROM items WHERE active=1"""
+        ).fetchone()
         return {
-            "to_weigh": to_weigh,
-            "today_orders": today,
-            "weighed_today": weighed_today["c"],
-            "value_today": money(weighed_today["v"]),
-            "items": items,
-            "items_without_weight": no_weight,
-            "pending_estimate": money(pending_amount),
+            "to_weigh": o_row["to_weigh"],
+            "today_orders": o_row["today_orders"],
+            "weighed_today": o_row["weighed_today"],
+            "value_today": money(o_row["value_today"]),
+            "items": i_row["items"],
+            "items_without_weight": i_row["no_weight"],
+            "pending_estimate": money(o_row["pending_estimate"]),
         }
     finally:
         conn.close()
